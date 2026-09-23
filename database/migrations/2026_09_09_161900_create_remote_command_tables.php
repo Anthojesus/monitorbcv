@@ -37,7 +37,7 @@ return new class extends Migration
             $table->foreignId('monitor_target_id')->constrained()->cascadeOnDelete();
             $table->foreignId('monitor_command_id')->constrained()->cascadeOnDelete();
             $table->timestamps();
-            $table->unique(['monitor_target_id', 'monitor_command_id']);
+            $table->unique(['monitor_target_id', 'monitor_command_id'], 'mtc_target_command_unique');
         });
 
         Schema::create('monitor_command_runs', function (Blueprint $table) {
