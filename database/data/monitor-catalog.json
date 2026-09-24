@@ -1,0 +1,98 @@
+{
+    "settings": {
+        "chart_history_max_days": "30"
+    },
+    "sites": [
+        {
+            "name": "BCV OFICIAL INTRA",
+            "url": "https://www.bcv.org.ve/",
+            "kind": "http",
+            "probe_origin": "internal",
+            "method": "GET",
+            "interval_seconds": 5,
+            "timeout_seconds": 5,
+            "expected_status": [200, 201, 204, 301, 302],
+            "expected_keyword": null,
+            "verify_ssl": true,
+            "is_enabled": true
+        },
+        {
+            "name": "OCPP WS",
+            "url": "https://ocppws.extra.bcv.org.ve/OCPP/health",
+            "kind": "health",
+            "probe_origin": "internal",
+            "method": "GET",
+            "interval_seconds": 5,
+            "timeout_seconds": 15,
+            "expected_status": [200],
+            "expected_keyword": null,
+            "verify_ssl": true,
+            "is_enabled": true
+        },
+        {
+            "name": "BIBLIOTECA EXTRA",
+            "url": "https://biblioteca.extra.bcv.org.ve/cgi-win/be_alex.cgi?nombrebd=bep5",
+            "kind": "http",
+            "probe_origin": "external",
+            "method": "GET",
+            "interval_seconds": 5,
+            "timeout_seconds": 5,
+            "expected_status": [200, 201, 204, 301, 302, 303, 304, 307, 308],
+            "expected_keyword": null,
+            "verify_ssl": true,
+            "is_enabled": true
+        },
+        {
+            "name": "ENTREGAGUARDIAS",
+            "url": "http://172.24.28.130/admin/login",
+            "kind": "http",
+            "probe_origin": "internal",
+            "method": "GET",
+            "interval_seconds": 5,
+            "timeout_seconds": 15,
+            "expected_status": [200, 201, 204, 301, 302],
+            "expected_keyword": null,
+            "verify_ssl": true,
+            "is_enabled": true
+        },
+        {
+            "name": "BCV OFICIAL EXTRA",
+            "url": "https://www.bcv.org.ve/",
+            "kind": "http",
+            "probe_origin": "external",
+            "method": "GET",
+            "interval_seconds": 5,
+            "timeout_seconds": 15,
+            "expected_status": [0],
+            "expected_keyword": null,
+            "verify_ssl": true,
+            "is_enabled": true
+        },
+        {
+            "name": "BIBLIOTECA EXTRA (MONITOREO INTERNO)",
+            "url": "https://biblioteca.extra.bcv.org.ve/cgi-win/be_alex.cgi?nombrebd=bep5",
+            "kind": "http",
+            "probe_origin": "internal",
+            "method": "GET",
+            "interval_seconds": 5,
+            "timeout_seconds": 15,
+            "expected_status": [200, 201, 204, 301, 302, 303, 304, 307, 308],
+            "expected_keyword": null,
+            "verify_ssl": true,
+            "is_enabled": true
+        },
+        {
+            "name": "PORTAL RRHH EXTRA",
+            "url": "https://enlineaconrh.intra.bcv.org.ve/web/intranet/start",
+            "kind": "http",
+            "probe_origin": "external",
+            "method": "GET",
+            "interval_seconds": 5,
+            "timeout_seconds": 5,
+            "expected_status": [200, 201, 204, 301, 302, 303, 304, 307, 308],
+            "expected_keyword": null,
+            "verify_ssl": true,
+            "is_enabled": true
+        }
+    ]
+}
