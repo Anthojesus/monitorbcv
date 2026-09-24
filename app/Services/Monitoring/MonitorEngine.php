@@ -5,6 +5,7 @@ namespace App\Services\Monitoring;
 use App\Models\MonitorCheck;
 use App\Models\MonitorTarget;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Throwable;
 
@@ -201,9 +202,17 @@ class MonitorEngine
         $date = now()->toDateString();
         $path = sprintf('%s/%d/%s.jsonl', (string) config('monitor.jsonl_path'), $target->id, $date);
 
-        Storage::disk('local')->append(
-            $path,
-            json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?: '{}',
-        );
+        try {
+            Storage::disk('local')->append(
+                $path,
+                json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?: '{}',
+            );
+        } catch (Throwable $exception) {
+            Log::warning('No se pudo escribir el JSONL del chequeo.', [
+                'target_id' => $target->id,
+                'path' => $path,
+                'error' => $exception->getMessage(),
+            ]);
+        }
     }
 }

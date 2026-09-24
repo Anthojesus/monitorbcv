@@ -7,7 +7,9 @@ use App\Services\Monitoring\FastApiProbe;
 use App\Services\Monitoring\HttpProbe;
 use App\Services\Monitoring\MonitorEngine;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Storage;
 use PHPUnit\Framework\Attributes\Test;
+use RuntimeException;
 use Tests\TestCase;
 
 class MonitorEngineTest extends TestCase
@@ -158,5 +160,26 @@ class MonitorEngineTest extends TestCase
         $this->assertSame('none', data_get($check->payload, 'engine'));
         $this->assertTrue($target->fresh()->last_ok);
         $this->assertSame(200, $target->fresh()->last_status_code);
+    }
+
+    #[Test]
+    public function run_still_persists_the_check_if_jsonl_cannot_be_written(): void
+    {
+        $target = MonitorTarget::factory()->create([
+            'probe_origin' => MonitorTarget::ORIGIN_INTERNAL,
+        ]);
+
+        $this->mock(FastApiProbe::class, function ($mock): void {
+            $mock->shouldReceive('enabled')->andReturn(false);
+            $mock->shouldReceive('healthy')->andReturn(false);
+        });
+
+        Storage::shouldReceive('disk')->with('local')->andReturnSelf();
+        Storage::shouldReceive('append')->andThrow(new RuntimeException('Unable to create a directory'));
+
+        $check = app(MonitorEngine::class)->run($target);
+
+        $this->assertNotNull($check->id);
+        $this->assertSame(1, $target->fresh()->checks()->count());
     }
 }
