@@ -356,7 +356,7 @@ new #[Title('Documentación')] class extends Component
                 </flux:card>
             </article>
 
-            <article id="sondas" x-show="visible('sonda api interior exterior fastapi vps bearer token probe_unavailable crisis vpn')" x-cloak class="scroll-mt-8">
+            <article id="sondas" x-show="visible('sonda api interior exterior fastapi vps bearer token probe_unavailable crisis vpn uvicorn health checks logs cron probe.py systemd 8100 semaforo semáforo jsonl')" x-cloak class="scroll-mt-8">
                 <flux:card class="space-y-4">
                     <div class="flex flex-wrap items-center gap-2">
                         <flux:heading size="lg">API interior y API exterior</flux:heading>
@@ -364,35 +364,160 @@ new #[Title('Documentación')] class extends Component
                         <flux:badge color="sky">Exterior</flux:badge>
                     </div>
                     <flux:text>
-                        Laravel es el único Centro de Control. Lo que cambia es <strong>quién abre la URL</strong>.
-                        Un destino tiene un solo origen. Si el mismo portal importa en ambos mundos, se crean dos destinos.
+                        Laravel <strong>no abre las URLs</strong>. Solo decide qué sondear y desde dónde. FastAPI es quien sale a la red, mide y devuelve un JSON.
+                        El código Python es el mismo (<span class="font-mono">services/monitor</span>); cambian el host, el token y la red desde la que sale.
                     </flux:text>
+                    <flux:text>
+                        Un destino tiene un solo origen (<span class="font-mono">internal</span> o <span class="font-mono">external</span>).
+                        Si el mismo portal importa en ambos mundos, se crean <strong>dos destinos</strong> (por ejemplo BCV OFICIAL INTRA y BCV OFICIAL EXTRA).
+                    </flux:text>
+
+                    <div class="overflow-x-auto rounded-lg border border-zinc-200 dark:border-white/10">
+                        <table class="min-w-full text-left text-sm">
+                            <thead class="bg-zinc-50 text-zinc-500 dark:bg-white/5 dark:text-zinc-400">
+                                <tr>
+                                    <th class="px-3 py-2.5 font-medium"> </th>
+                                    <th class="px-3 py-2.5 font-medium">Interior</th>
+                                    <th class="px-3 py-2.5 font-medium">Exterior</th>
+                                </tr>
+                            </thead>
+                            <tbody class="text-zinc-700 dark:text-zinc-200">
+                                <tr class="border-t border-zinc-100 dark:border-white/5">
+                                    <td class="px-3 py-2.5 font-medium">Dónde corre</td>
+                                    <td class="px-3 py-2.5">Mismo host que Laravel, <span class="font-mono">127.0.0.1:8100</span> (systemd <span class="font-mono">monitorbcv-internal</span>)</td>
+                                    <td class="px-3 py-2.5">VPS público, <span class="font-mono">https://monitor.tudrgroup.com</span></td>
+                                </tr>
+                                <tr class="border-t border-zinc-100 dark:border-white/5">
+                                    <td class="px-3 py-2.5 font-medium">Red</td>
+                                    <td class="px-3 py-2.5">LAN del BCV (<span class="font-mono">.intra.</span>, <span class="font-mono">.extra.</span>, IPs privadas)</td>
+                                    <td class="px-3 py-2.5">Internet, sin VPN BCV. Vista del ciudadano.</td>
+                                </tr>
+                                <tr class="border-t border-zinc-100 dark:border-white/5">
+                                    <td class="px-3 py-2.5 font-medium">Token en Laravel</td>
+                                    <td class="px-3 py-2.5"><span class="font-mono">MONITOR_API_INTERNAL_TOKEN</span></td>
+                                    <td class="px-3 py-2.5"><span class="font-mono">MONITOR_API_EXTERNAL_TOKEN</span></td>
+                                </tr>
+                                <tr class="border-t border-zinc-100 dark:border-white/5">
+                                    <td class="px-3 py-2.5 font-medium">Token en Python</td>
+                                    <td class="px-3 py-2.5" colspan="2">En cada host se llama <span class="font-mono">MONITOR_API_TOKEN</span> y debe coincidir solo con el origen de ese host. No los mezcle.</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <flux:heading size="sm">Rutas de FastAPI</flux:heading>
+                    <flux:text>
+                        El proceso es <span class="font-mono">uvicorn main:app</span>. Tres rutas:
+                    </flux:text>
+                    <div class="overflow-x-auto rounded-lg border border-zinc-200 dark:border-white/10">
+                        <table class="min-w-full text-left text-sm">
+                            <thead class="bg-zinc-50 text-zinc-500 dark:bg-white/5 dark:text-zinc-400">
+                                <tr>
+                                    <th class="px-3 py-2.5 font-medium">Ruta</th>
+                                    <th class="px-3 py-2.5 font-medium">Auth</th>
+                                    <th class="px-3 py-2.5 font-medium">Para qué sirve</th>
+                                </tr>
+                            </thead>
+                            <tbody class="text-zinc-700 dark:text-zinc-200">
+                                <tr class="border-t border-zinc-100 dark:border-white/5">
+                                    <td class="px-3 py-2.5 font-mono text-xs">GET /health</td>
+                                    <td class="px-3 py-2.5">Pública. No manda Bearer.</td>
+                                    <td class="px-3 py-2.5">Solo dice que uvicorn está vivo. No sondea ningún sitio. Los semáforos del dashboard usan esta ruta.</td>
+                                </tr>
+                                <tr class="border-t border-zinc-100 dark:border-white/5">
+                                    <td class="px-3 py-2.5 font-mono text-xs">POST /v1/checks</td>
+                                    <td class="px-3 py-2.5">Bearer obligatorio</td>
+                                    <td class="px-3 py-2.5">Laravel envía el destino. FastAPI ejecuta <span class="font-mono">probe.py</span> y devuelve el JSON (DNS, TCP, TLS, HTTP, tiempos, <span class="font-mono">ok</span>).</td>
+                                </tr>
+                                <tr class="border-t border-zinc-100 dark:border-white/5">
+                                    <td class="px-3 py-2.5 font-mono text-xs">GET /v1/logs</td>
+                                    <td class="px-3 py-2.5">Bearer obligatorio</td>
+                                    <td class="px-3 py-2.5">Últimos ~120 eventos en memoria. El menú <em>Logs de API</em> los muestra. No es la base de Laravel.</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <pre class="overflow-x-auto rounded-lg bg-zinc-950 p-3 text-xs text-zinc-100">{"status":"ok","service":"monitor-bcv","probe":"ok","version":"1.1.0"}</pre>
+                    <flux:text>
+                        Si <span class="font-mono">MONITOR_API_TOKEN</span> está vacío o el Bearer no coincide, <span class="font-mono">/v1/checks</span> y <span class="font-mono">/v1/logs</span> responden <span class="font-mono">401</span>.
+                        <span class="font-mono">/health</span> no pide token: el semáforo no se pone rojo por un token mal copiado.
+                    </flux:text>
+
+                    <flux:heading size="sm">Cómo Laravel elige la sonda</flux:heading>
+                    <flux:text>
+                        El cron (<span class="font-mono">* * * * * php artisan schedule:run</span>) dispara <span class="font-mono">monitor:run</span> cada 5 segundos.
+                        El motor toma destinos vencidos (los nunca chequeados van primero), lee <span class="font-mono">probe_origin</span> y:
+                    </flux:text>
+                    <ol class="list-decimal space-y-1 pl-5 text-sm leading-6 text-zinc-600 dark:text-zinc-300">
+                        <li>Si esa sonda está habilitada y <span class="font-mono">GET /health</span> responde OK, hace <span class="font-mono">POST</span> a <span class="font-mono">{url}/v1/checks</span> con Bearer.</li>
+                        <li>Guarda el JSON en <span class="font-mono">monitor_checks</span> y un archivo <span class="font-mono">.jsonl</span> en disco.</li>
+                        <li>Si la sonda de ese origen no está usable, el chequeo queda <span class="font-mono">probe_unavailable</span> (ámbar “No monitoreado”). El último UP/DOWN real no se pisa.</li>
+                    </ol>
+                    <flux:callout icon="exclamation-triangle" variant="warning">
+                        Regla de crisis: PHP no sustituye a FastAPI. Un sitio interior no se “salva” con la sonda del VPS, ni al revés.
+                        El punto rojo global significa “hay un portal DOWN”, no “se cayó el VPS”.
+                        Semáforos API/Sonda Interior y Exterior son independientes.
+                    </flux:callout>
+
+                    <flux:heading size="sm">Qué mide probe.py</flux:heading>
+                    <flux:text>
+                        Cada chequeo recorre el camino, no solo el código HTTP:
+                    </flux:text>
+                    <ol class="list-decimal space-y-1 pl-5 text-sm leading-6 text-zinc-600 dark:text-zinc-300">
+                        <li><strong>DNS</strong> — resolución, IPs y milisegundos.</li>
+                        <li><strong>TCP</strong> — conexión al host:puerto.</li>
+                        <li><strong>TLS</strong> (si es HTTPS) — handshake, certificado, días restantes, cipher. Usa el almacén de confianza del sistema.</li>
+                        <li><strong>HTTP</strong> — TTFB, descarga, status, headers, título y SHA-256 del cuerpo.</li>
+                        <li><strong>Regla de negocio</strong> — ¿el status está en los códigos esperados? ¿aparece la palabra clave? El valor <span class="font-mono">0</span> significa “cualquier HTTP cuenta” (<span class="font-mono">http_reachable</span> si no es un 200 de la lista).</li>
+                    </ol>
+                    <flux:text>
+                        Si el certificado falla por emisor no confiable, reintenta sin verificar y marca <span class="font-mono">trust: issuer_untrusted</span> (el sitio puede seguir alcanzable).
+                        El JSON lleva <span class="font-mono">engine: "fastapi"</span>. Laravel lo enriquece (health JSON de un web service, etc.) y lo pinta en gráficos y tabla.
+                        El timeout es el del destino más 5 s en el cliente de Laravel. Si FastAPI no contesta a tiempo, también es <span class="font-mono">probe_unavailable</span>.
+                    </flux:text>
+
+                    <flux:heading size="sm">Interior y exterior en este despliegue</flux:heading>
                     <div class="grid gap-3 md:grid-cols-2">
                         <div class="rounded-lg border border-zinc-200 p-3 dark:border-white/10">
                             <div class="text-sm font-medium">Interior</div>
                             <p class="mt-1 text-sm text-zinc-600 dark:text-zinc-300">
-                                FastAPI en la red BCV. Para <span class="font-mono">*.intra.*</span>, <span class="font-mono">*.extra.*</span> e IPs privadas.
+                                Laravel, en el mismo host, pega a <span class="font-mono">http://127.0.0.1:8100</span>.
+                                No sale a Internet. Desde ahí sí llega a portales <span class="font-mono">.intra.</span>, <span class="font-mono">.extra.</span> e IPs privadas.
                                 Si uvicorn local está apagado, esos destinos <strong>no se monitorean</strong>: no es una falla del portal.
                             </p>
                         </div>
                         <div class="rounded-lg border border-zinc-200 p-3 dark:border-white/10">
                             <div class="text-sm font-medium">Exterior</div>
                             <p class="mt-1 text-sm text-zinc-600 dark:text-zinc-300">
-                                FastAPI en un VPS <strong>sin VPN BCV</strong>. Es la vista del ciudadano.
-                                Si el VPS está caído, <strong>no se monitorea</strong>: no es una falla del portal. El último UP/DOWN se conserva.
+                                Laravel (aún en el BCV) pega por HTTPS al VPS. El VPS abre la URL <strong>desde fuera</strong>.
+                                Si el portal solo existe en la LAN, el exterior lo verá DOWN (timeout, DNS o TLS).
+                                Eso es el dato: ¿se ve desde Internet? Si el VPS está caído, <strong>no se monitorea</strong> y se conserva el último UP/DOWN.
                             </p>
                         </div>
                     </div>
-                    <flux:callout icon="exclamation-triangle" variant="warning">
-                        El punto rojo global significa “hay un portal DOWN”, no “se cayó el VPS”.
-                        Semáforos API/Sonda Interior y Exterior son independientes. /health es público; <span class="font-mono">POST /v1/checks</span> y <span class="font-mono">GET /v1/logs</span> exigen <span class="font-mono">Authorization: Bearer</span>.
-                    </flux:callout>
                     <flux:text>
                         En Laravel: <span class="font-mono">MONITOR_API_INTERNAL_*</span> (o el legado <span class="font-mono">MONITOR_API_URL</span>) y
                         <span class="font-mono">MONITOR_API_EXTERNAL_URL</span>, <span class="font-mono">MONITOR_API_EXTERNAL_TOKEN</span>, <span class="font-mono">MONITOR_API_EXTERNAL_ENABLED=true</span>.
-                        En cada host Python el secreto se llama <span class="font-mono">MONITOR_API_TOKEN</span> y debe coincidir con el token de ese origen.
-                        El menú <em>Logs de API</em> muestra los últimos eventos de ambas sondas.
+                        Los tokens deben ser <strong>distintos</strong>. Si pone el token interior en el exterior, <span class="font-mono">/health</span> del VPS sigue verde y <span class="font-mono">/v1/checks</span> da 401: sitios exteriores en ámbar.
                     </flux:text>
+
+                    <flux:heading size="sm">Semáforos del dashboard</flux:heading>
+                    <flux:text>
+                        Cada poll de Livewire (5 s) Laravel hace <span class="font-mono">GET /health</span> a ambas APIs (sin Bearer; el timeout es más largo por el TLS del VPS).
+                    </flux:text>
+                    <ul class="list-disc space-y-1 pl-5 text-sm leading-6 text-zinc-600 dark:text-zinc-300">
+                        <li><strong>API verde</strong> — uvicorn respondió.</li>
+                        <li><strong>Sonda Python verde</strong> — el JSON trae <span class="font-mono">probe=ok</span>.</li>
+                        <li><strong>Sitio ámbar “No monitoreado”</strong> — esa API no estaba usable al chequear.</li>
+                    </ul>
+                    <flux:text>
+                        <span class="font-mono">curl</span> al VPS puede ir bien y Laravel no: PHP usa otro almacén TLS. Si el semáforo exterior está rojo y <span class="font-mono">curl https://monitor.tudrgroup.com/health</span> da 200, suele ser timeout o certificado de PHP.
+                    </flux:text>
+
+                    <flux:callout icon="information-circle">
+                        FastAPI no guarda usuarios, no pinta la UI, no corre el cron ni ejecuta SSH. No tiene base de datos.
+                        Si reinicia uvicorn se pierden solo los logs en memoria. El historial real está en <span class="font-mono">monitor_checks</span>.
+                    </flux:callout>
                 </flux:card>
             </article>
 

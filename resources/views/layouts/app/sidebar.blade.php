@@ -28,8 +28,8 @@
             <flux:spacer />
 
             <flux:sidebar.nav>
-                <flux:sidebar.item icon="folder-git-2" href="https://github.com/laravel/livewire-starter-kit" target="_blank">
-                    {{ __('Repository') }}
+                <flux:sidebar.item icon="folder-git-2" href="{{ config('app.repository') }}" target="_blank" rel="noopener noreferrer">
+                    Repositorio
                 </flux:sidebar.item>
             </flux:sidebar.nav>
 

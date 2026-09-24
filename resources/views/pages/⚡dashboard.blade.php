@@ -153,64 +153,91 @@ new #[Title('Centro de Control')] class extends Component
 
         <div class="relative flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
             <div class="max-w-2xl space-y-3">
-                <div class="flex flex-wrap items-center gap-2.5">
-                    <span class="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-semibold tracking-wide text-white uppercase">
-                        <span @class([
-                            'size-2.5 rounded-full',
-                            'bg-rose-500 shadow-[0_0_12px] shadow-rose-400 animate-pulse' => $health === 'critical',
-                            'bg-amber-400 shadow-[0_0_12px] shadow-amber-300 animate-pulse' => $health === 'attention',
-                            'bg-zinc-400' => $health === 'empty',
-                            'bg-emerald-400 shadow-[0_0_14px] shadow-emerald-300 animate-pulse' => $health === 'operational',
-                        ])></span>
-                        Centro de Control
-                    </span>
-                    @php
-                        $runtime = $this->metrics['runtime'];
-                        $internalRt = $runtime['internal'] ?? $runtime;
-                        $externalRt = $runtime['external'] ?? ['api' => ['ok' => false, 'hint' => 'Sin sonda exterior'], 'python' => ['ok' => false, 'hint' => 'Sin sonda exterior']];
-                        $probeGroups = [
-                            [
-                                'label' => 'Interior',
-                                'items' => [
-                                    ['name' => 'API Interior', 'ok' => (bool) ($internalRt['api']['ok'] ?? false), 'hint' => $internalRt['api']['hint'] ?? ''],
-                                    ['name' => 'Sonda Interior', 'ok' => (bool) ($internalRt['python']['ok'] ?? false), 'hint' => $internalRt['python']['hint'] ?? ''],
-                                ],
+                @php
+                    $runtime = $this->metrics['runtime'];
+                    $internalRt = $runtime['internal'] ?? $runtime;
+                    $externalRt = $runtime['external'] ?? ['api' => ['ok' => false, 'hint' => 'Sin sonda exterior'], 'python' => ['ok' => false, 'hint' => 'Sin sonda exterior']];
+                    $probeGroups = [
+                        [
+                            'label' => 'Interior',
+                            'items' => [
+                                ['name' => 'API Interior', 'ok' => (bool) ($internalRt['api']['ok'] ?? false), 'hint' => $internalRt['api']['hint'] ?? ''],
+                                ['name' => 'Sonda Interior', 'ok' => (bool) ($internalRt['python']['ok'] ?? false), 'hint' => $internalRt['python']['hint'] ?? ''],
                             ],
-                            [
-                                'label' => 'Exterior',
-                                'items' => [
-                                    ['name' => 'API Exterior', 'ok' => (bool) ($externalRt['api']['ok'] ?? false), 'hint' => $externalRt['api']['hint'] ?? ''],
-                                    ['name' => 'Sonda Exterior', 'ok' => (bool) ($externalRt['python']['ok'] ?? false), 'hint' => $externalRt['python']['hint'] ?? ''],
-                                ],
+                        ],
+                        [
+                            'label' => 'Exterior',
+                            'items' => [
+                                ['name' => 'API Exterior', 'ok' => (bool) ($externalRt['api']['ok'] ?? false), 'hint' => $externalRt['api']['hint'] ?? ''],
+                                ['name' => 'Sonda Exterior', 'ok' => (bool) ($externalRt['python']['ok'] ?? false), 'hint' => $externalRt['python']['hint'] ?? ''],
                             ],
-                        ];
-                    @endphp
-                    @foreach ($probeGroups as $group)
-                        <div class="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-black/30 p-1 pl-2.5">
-                            <span class="pr-0.5 text-[10px] font-semibold tracking-wider text-zinc-400 uppercase">{{ $group['label'] }}</span>
-                            @foreach ($group['items'] as $chip)
-                                <span
-                                    title="{{ $chip['hint'] }}"
-                                    @class([
-                                        'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold tracking-wide',
-                                        'bg-emerald-500 text-white shadow-[0_0_18px] shadow-emerald-400/80' => $chip['ok'],
-                                        'bg-rose-600 text-white shadow-[0_0_14px] shadow-rose-500/60' => ! $chip['ok'],
-                                    ])
-                                >
+                        ],
+                    ];
+                @endphp
+
+                <div class="flex flex-col gap-3">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                        <span class="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-semibold tracking-wide text-white uppercase">
+                            <span @class([
+                                'size-2.5 rounded-full',
+                                'bg-rose-500 shadow-[0_0_12px] shadow-rose-400 animate-pulse' => $health === 'critical',
+                                'bg-amber-400 shadow-[0_0_12px] shadow-amber-300 animate-pulse' => $health === 'attention',
+                                'bg-zinc-400' => $health === 'empty',
+                                'bg-emerald-400 shadow-[0_0_14px] shadow-emerald-300 animate-pulse' => $health === 'operational',
+                            ])></span>
+                            Centro de Control
+                        </span>
+                        <span class="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-medium tracking-wide text-zinc-300">
+                            <span class="size-1.5 rounded-full bg-sky-400"></span>
+                            Intervalo por sitio
+                        </span>
+                    </div>
+
+                    <a href="{{ route('monitor.apis') }}" wire:navigate class="grid gap-2 sm:grid-cols-2" title="Ver detalle y logs de las sondas">
+                        @foreach ($probeGroups as $group)
+                            @php $groupOk = collect($group['items'])->every(fn (array $item): bool => $item['ok']); @endphp
+                            <div @class([
+                                'rounded-xl border px-3 py-2.5 transition hover:bg-white/5',
+                                'border-emerald-400/25 bg-emerald-500/10' => $groupOk,
+                                'border-rose-400/30 bg-rose-500/10' => ! $groupOk,
+                            ])>
+                                <div class="mb-2 flex items-center justify-between gap-2">
+                                    <span class="text-[10px] font-semibold tracking-[0.16em] text-zinc-400 uppercase">{{ $group['label'] }}</span>
                                     <span @class([
-                                        'size-1.5 rounded-full',
-                                        'bg-white animate-pulse' => $chip['ok'],
-                                        'bg-rose-200' => ! $chip['ok'],
-                                    ])></span>
-                                    {{ $chip['name'] }} · {{ $chip['ok'] ? 'OK' : 'DOWN' }}
-                                </span>
-                            @endforeach
-                        </div>
-                    @endforeach
-                    <span class="inline-flex items-center gap-1.5 rounded-full bg-emerald-500 px-2.5 py-1.5 text-xs font-bold tracking-wide text-white shadow-[0_0_18px] shadow-emerald-400/80">
-                        <span class="size-1.5 rounded-full bg-white animate-pulse"></span>
-                        Intervalo por sitio
-                    </span>
+                                        'inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-bold uppercase',
+                                        'bg-emerald-500/20 text-emerald-300' => $groupOk,
+                                        'bg-rose-500/20 text-rose-200' => ! $groupOk,
+                                    ])>
+                                        <span @class([
+                                            'size-1.5 rounded-full',
+                                            'bg-emerald-400 shadow-[0_0_8px] shadow-emerald-300 animate-pulse' => $groupOk,
+                                            'bg-rose-400 shadow-[0_0_8px] shadow-rose-300 animate-pulse' => ! $groupOk,
+                                        ])></span>
+                                        {{ $groupOk ? 'En línea' : 'Caída' }}
+                                    </span>
+                                </div>
+                                <div class="flex flex-wrap gap-1.5">
+                                    @foreach ($group['items'] as $chip)
+                                        <span
+                                            title="{{ $chip['hint'] }}"
+                                            @class([
+                                                'inline-flex min-w-0 items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] font-semibold tracking-wide',
+                                                'bg-emerald-500/15 text-emerald-100' => $chip['ok'],
+                                                'bg-rose-500/20 text-rose-100' => ! $chip['ok'],
+                                            ])
+                                        >
+                                            <span @class([
+                                                'size-1.5 shrink-0 rounded-full',
+                                                'bg-emerald-300 animate-pulse' => $chip['ok'],
+                                                'bg-rose-300' => ! $chip['ok'],
+                                            ])></span>
+                                            <span class="truncate">{{ $chip['name'] }} · {{ $chip['ok'] ? 'OK' : 'DOWN' }}</span>
+                                        </span>
+                                    @endforeach
+                                </div>
+                            </div>
+                        @endforeach
+                    </a>
                 </div>
 
                 <flux:heading size="xl" class="text-white">{{ $healthCopy[0] }}</flux:heading>

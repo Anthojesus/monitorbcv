@@ -15,6 +15,8 @@ return [
 
     'name' => env('APP_NAME', 'Laravel'),
 
+    'repository' => env('APP_REPOSITORY_URL', 'https://github.com/Anthojesus/monitorbcv'),
+
     /*
     |--------------------------------------------------------------------------
     | Application Environment

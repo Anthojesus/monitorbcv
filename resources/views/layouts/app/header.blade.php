@@ -30,8 +30,8 @@
             <flux:tooltip :content="__('Search')" position="bottom">
                 <flux:navbar.item class="!h-10 [&>div>svg]:size-5" icon="magnifying-glass" href="#" :label="__('Search')" />
             </flux:tooltip>
-            <flux:tooltip :content="__('Repository')" position="bottom">
-                <flux:navbar.item class="h-10 max-lg:hidden [&>div>svg]:size-5" icon="folder-git-2" href="https://github.com/laravel/livewire-starter-kit" target="_blank" :label="__('Repository')" />
+            <flux:tooltip content="Repositorio" position="bottom">
+                <flux:navbar.item class="h-10 max-lg:hidden [&>div>svg]:size-5" icon="folder-git-2" href="{{ config('app.repository') }}" target="_blank" rel="noopener noreferrer" label="Repositorio" />
             </flux:tooltip>
             <flux:tooltip content="Documentación" position="bottom">
                 <flux:navbar.item class="h-10 max-lg:hidden [&>div>svg]:size-5" icon="book-open-text" :href="route('documentation')" wire:navigate label="Documentación" />
@@ -65,8 +65,8 @@
         <flux:spacer />
 
         <flux:sidebar.nav>
-            <flux:sidebar.item icon="folder-git-2" href="https://github.com/laravel/livewire-starter-kit" target="_blank">
-                {{ __('Repository') }}
+            <flux:sidebar.item icon="folder-git-2" href="{{ config('app.repository') }}" target="_blank" rel="noopener noreferrer">
+                Repositorio
             </flux:sidebar.item>
             <flux:sidebar.item icon="book-open-text" :href="route('documentation')" :current="request()->routeIs('documentation')" wire:navigate>
                 Documentación

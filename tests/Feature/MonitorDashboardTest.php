@@ -82,6 +82,10 @@ class MonitorDashboardTest extends TestCase
             ->assertSee('Acciones de servidor')
             ->assertSee('UP 500')
             ->assertSee('API interior y API exterior')
+            ->assertSee('uvicorn main:app')
+            ->assertSee('GET /health')
+            ->assertSee('POST /v1/checks')
+            ->assertSee('Regla de crisis')
             ->assertSee('Despliegue de la sonda exterior')
             ->assertSee('IP_PUBLICA_LARAVEL')
             ->assertSee('MONITOR_API_EXTERNAL_URL');
