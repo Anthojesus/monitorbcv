@@ -2,9 +2,11 @@
 
 use App\Models\MonitorCommand;
 use App\Models\MonitorTarget;
+use App\Services\Monitoring\FastApiProbe;
 use App\Services\Monitoring\MonitorCopy;
 use App\Services\Monitoring\MonitorEngine;
 use App\Services\Monitoring\MonitorSettings;
+use App\Services\Monitoring\SiteCondition;
 use App\Services\RemoteCommand\RemoteCommandRunner;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
@@ -107,6 +109,27 @@ new #[Title('Sitios')] class extends Component
             ->when($this->editingId, fn ($query) => $query->whereKeyNot($this->editingId))
             ->orderBy('name')
             ->get(['id', 'name', 'url']);
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    #[Computed]
+    public function siteConditions(): array
+    {
+        $runtime = app(FastApiProbe::class)->runtime();
+        $condition = app(SiteCondition::class);
+        $rows = [];
+
+        foreach ($this->sites as $site) {
+            $rows[$site->id] = $condition->evaluate(
+                $site,
+                $site->checks,
+                (bool) data_get($runtime, $site->probeOrigin().'.api.ok'),
+            );
+        }
+
+        return $rows;
     }
 
     public function updatedUrl(): void
@@ -369,9 +392,18 @@ new #[Title('Sitios')] class extends Component
 
         $this->syncServerAndCommands($target);
         $this->ssh_password = '';
-        $this->showForm = false;
-        unset($this->sites, $this->proxyOptions);
+        unset($this->sites, $this->siteConditions, $this->proxyOptions);
+        $this->closeForm();
         $this->js('window.notify({ heading: "Sitio guardado", text: "Ya puedes lanzar un chequeo.", variant: "success" })');
+    }
+
+    public function closeForm(): void
+    {
+        $this->showForm = false;
+        $this->kind = '';
+        $this->editingId = null;
+        $this->pendingCustomCommands = [];
+        unset($this->formCommands, $this->proxyOptions);
     }
 
     /**
@@ -474,7 +506,7 @@ new #[Title('Sitios')] class extends Component
     public function tick(MonitorEngine $engine): void
     {
         $engine->runDueFromWeb();
-        unset($this->sites);
+        unset($this->sites, $this->siteConditions);
     }
 
     private function authorizeManage(): void
@@ -518,7 +550,7 @@ new #[Title('Sitios')] class extends Component
                         $server = MonitorCopy::webServer($latest?->payload);
                         $reason = $latest?->availability_reason;
                         $hint = MonitorCopy::reasonHint($reason, $site->last_status_code, $site->probeOrigin());
-                        $condition = app(\App\Services\Monitoring\SiteCondition::class)->evaluate($site, $site->checks);
+                        $condition = $this->siteConditions[$site->id] ?? ['key' => 'pending'];
                     @endphp
                     <tr class="align-top" wire:key="site-row-{{ $site->id }}">
                         <td class="px-4 py-3">
@@ -583,6 +615,7 @@ new #[Title('Sitios')] class extends Component
     </div>
 
     <flux:modal wire:model="showForm" class="md:w-2xl">
+        @if ($showForm)
         <form wire:submit="save" class="space-y-4">
             <flux:heading size="lg">{{ $editingId ? 'Editar destino' : 'Nuevo destino' }}</flux:heading>
             <flux:text size="sm">Primero elija el tipo. El formulario muestra solo lo que ese destino necesita.</flux:text>
@@ -612,7 +645,7 @@ new #[Title('Sitios')] class extends Component
 
             @if ($kind === '')
                 <div class="flex justify-end">
-                    <flux:button type="button" variant="ghost" wire:click="$set('showForm', false)">Cancelar</flux:button>
+                    <flux:button type="button" variant="ghost" wire:click="closeForm">Cancelar</flux:button>
                 </div>
             @else
                 <flux:input wire:model="name" label="Nombre" />
@@ -783,10 +816,11 @@ new #[Title('Sitios')] class extends Component
                 </div>
 
                 <div class="flex justify-end gap-2">
-                    <flux:button type="button" variant="ghost" wire:click="$set('showForm', false)">Cancelar</flux:button>
+                    <flux:button type="button" variant="ghost" wire:click="closeForm">Cancelar</flux:button>
                     <flux:button type="submit" variant="primary">Guardar</flux:button>
                 </div>
             @endif
         </form>
+        @endif
     </flux:modal>
 </section>

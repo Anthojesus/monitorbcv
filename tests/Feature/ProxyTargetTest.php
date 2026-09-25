@@ -28,6 +28,7 @@ class ProxyTargetTest extends TestCase
 
         Livewire::actingAs($admin)
             ->test('pages::monitor.sites')
+            ->assertDontSee('¿Qué va a monitorear?')
             ->call('create')
             ->assertSee('¿Qué va a monitorear?')
             ->assertSee('Proxy Linux')

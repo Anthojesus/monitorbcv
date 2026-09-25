@@ -6,6 +6,7 @@ use App\Models\MonitorCommandRun;
 use App\Models\MonitorTarget;
 use App\Services\Monitoring\ChartRange;
 use App\Services\Monitoring\CheckStats;
+use App\Services\Monitoring\FastApiProbe;
 use App\Services\Monitoring\MonitorCopy;
 use App\Services\Monitoring\MonitorEngine;
 use App\Services\Monitoring\MonitorSettings;
@@ -118,7 +119,13 @@ new #[Title('Detalle del sitio')] class extends Component
     #[Computed]
     public function condition(): array
     {
-        return app(SiteCondition::class)->evaluate($this->target, $this->checks);
+        $runtime = app(FastApiProbe::class)->runtime();
+
+        return app(SiteCondition::class)->evaluate(
+            $this->target,
+            $this->checks,
+            (bool) data_get($runtime, $this->target->probeOrigin().'.api.ok'),
+        );
     }
 
     /**
@@ -149,9 +156,14 @@ new #[Title('Detalle del sitio')] class extends Component
             return null;
         }
 
+        $runtime = app(FastApiProbe::class)->runtime();
         $condition = app(SiteCondition::class);
         $thisCondition = $this->condition;
-        $pairCondition = $condition->evaluate($pair, $pair->checks);
+        $pairCondition = $condition->evaluate(
+            $pair,
+            $pair->checks,
+            (bool) data_get($runtime, $pair->probeOrigin().'.api.ok'),
+        );
 
         return app(OriginCorrelation::class)->forPair($this->target, $pair, $thisCondition, $pairCondition);
     }
@@ -168,8 +180,13 @@ new #[Title('Detalle del sitio')] class extends Component
             return null;
         }
 
+        $runtime = app(FastApiProbe::class)->runtime();
         $proxy->load(['checks' => fn ($query) => $query->latest('checked_at')->limit(8)]);
-        $proxyCondition = app(SiteCondition::class)->evaluate($proxy, $proxy->checks);
+        $proxyCondition = app(SiteCondition::class)->evaluate(
+            $proxy,
+            $proxy->checks,
+            (bool) data_get($runtime, $proxy->probeOrigin().'.api.ok'),
+        );
 
         return app(ProxyCorrelation::class)->diagnose($this->target, $proxy, $this->condition, $proxyCondition);
     }

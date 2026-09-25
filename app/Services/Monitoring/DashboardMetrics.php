@@ -17,7 +17,7 @@ class DashboardMetrics
         $since ??= now()->subDay();
         $targets = MonitorTarget::query()->with([
             'checks' => fn ($query) => $query->latest('checked_at')->limit(40),
-            'proxy.checks' => fn ($query) => $query->latest('checked_at')->limit(8),
+            'proxy:id,name,kind,probe_origin,last_ok',
         ])->get();
         $checks = MonitorCheck::query()
             ->where('checked_at', '>=', $since)
@@ -157,7 +157,7 @@ class DashboardMetrics
             'targets' => $targets
                 ->sortBy(fn (MonitorTarget $target) => $target->last_ok === false ? 0 : 1)
                 ->values()
-                ->map(function (MonitorTarget $target) use ($conditions, $diagnoses, $runtime, $condition, $proxyCorrelation) {
+                ->map(function (MonitorTarget $target) use ($conditions, $diagnoses, $runtime, $proxyCorrelation) {
                     $recent = $target->checks;
                     $latest = $recent->first();
                     $payload = $latest instanceof MonitorCheck ? $latest->payload : [];
@@ -172,13 +172,11 @@ class DashboardMetrics
                     );
                     $proxy = $target->proxy;
                     $proxyCondition = $proxy instanceof MonitorTarget
-                        ? ($conditions[$proxy->id] ?? $condition->evaluate(
-                            $proxy,
-                            $proxy->checks,
-                            (bool) data_get($runtime, $proxy->probeOrigin().'.api.ok'),
-                        ))
+                        ? ($conditions[$proxy->id] ?? null)
                         : null;
-                    $proxyDiagnosis = $proxyCorrelation->diagnose($target, $proxy, $siteCondition, $proxyCondition);
+                    $proxyDiagnosis = $proxy !== null
+                        ? $proxyCorrelation->diagnose($target, $proxy, $siteCondition, $proxyCondition)
+                        : null;
 
                     return [
                         'id' => $target->id,
