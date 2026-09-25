@@ -3,7 +3,6 @@
 use App\Services\Monitoring\ChartRange;
 use App\Services\Monitoring\DashboardMetrics;
 use App\Services\Monitoring\DashboardTableLayout;
-use App\Services\Monitoring\MonitorEngine;
 use App\Services\Monitoring\MonitorSettings;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Title;
@@ -43,9 +42,8 @@ new #[Title('Centro de Control')] class extends Component
         unset($this->metrics);
     }
 
-    public function tick(MonitorEngine $engine): void
+    public function tick(): void
     {
-        $engine->runDueFromWeb();
         unset($this->metrics, $this->tableLayout);
     }
 
@@ -146,7 +144,7 @@ new #[Title('Centro de Control')] class extends Component
     };
 @endphp
 
-<section class="flex w-full flex-col gap-6" wire:poll.5s="tick">
+<section class="flex w-full flex-col gap-6" wire:poll.10s="tick">
     <div class="relative overflow-hidden rounded-2xl border border-white/10 bg-zinc-950 px-6 py-6 text-white shadow-xl dark:bg-black/40 sm:px-8">
         <div class="pointer-events-none absolute -right-16 -top-20 size-64 rounded-full bg-sky-500/20 blur-3xl"></div>
         <div class="pointer-events-none absolute -bottom-24 left-1/3 size-56 rounded-full bg-emerald-400/10 blur-3xl"></div>

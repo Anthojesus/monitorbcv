@@ -16,14 +16,14 @@ class DashboardMetrics
     {
         $since ??= now()->subDay();
         $targets = MonitorTarget::query()->with([
-            'checks' => fn ($query) => $query->latest('checked_at')->limit(40),
+            'checks' => fn ($query) => $query->latest('checked_at')->limit(8),
             'proxy:id,name,kind,probe_origin,last_ok',
         ])->get();
         $checks = MonitorCheck::query()
             ->where('checked_at', '>=', $since)
             ->latest('checked_at')
-            ->limit(400)
-            ->get();
+            ->limit(120)
+            ->get(['id', 'monitor_target_id', 'ok', 'status_code', 'total_ms', 'payload', 'checked_at', 'availability_reason']);
         $probe = app(FastApiProbe::class);
         $runtime = $probe->runtime();
 

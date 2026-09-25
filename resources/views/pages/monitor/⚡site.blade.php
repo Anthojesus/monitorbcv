@@ -208,9 +208,8 @@ new #[Title('Detalle del sitio')] class extends Component
             ->paginate(10);
     }
 
-    public function tick(MonitorEngine $engine): void
+    public function tick(): void
     {
-        $engine->runDueFromWeb();
         unset($this->target, $this->checks, $this->reliability, $this->chartSeries, $this->recentCommandRuns, $this->selectedCommand, $this->chartRangeOptions, $this->condition, $this->windowStats, $this->pairDiagnosis, $this->proxyDiagnosis);
     }
 
@@ -409,7 +408,7 @@ new #[Title('Detalle del sitio')] class extends Component
     }
 }; ?>
 
-<section class="flex w-full flex-col gap-6" wire:poll.5s="tick">
+<section class="flex w-full flex-col gap-6" wire:poll.10s="tick">
     <div class="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
         <div>
             <flux:button variant="ghost" size="sm" icon="arrow-left" :href="route('monitor.sites')" wire:navigate class="mb-2">

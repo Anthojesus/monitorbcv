@@ -4,6 +4,7 @@ namespace App\Services\Monitoring;
 
 use App\Models\MonitorCheck;
 use App\Models\MonitorTarget;
+use Carbon\Carbon;
 use DateTimeInterface;
 use Illuminate\Support\Collection;
 
@@ -34,13 +35,15 @@ class SiteLineChart
     public function series(Collection $targets, ?DateTimeInterface $since = null): array
     {
         $timeFormat = $this->timeFormat($since, now());
-
-        return $targets
+        $https = $targets
             ->filter(fn (MonitorTarget $target) => str_starts_with(strtolower($target->url), 'https://'))
             ->sortBy(fn (MonitorTarget $target) => $target->last_ok === false ? 0 : 1)
-            ->values()
-            ->map(function (MonitorTarget $target) use ($since, $timeFormat) {
-                $checks = $this->checksForSeries($target, $since);
+            ->values();
+        $grouped = $this->checksForTargets($https, $since);
+
+        return $https
+            ->map(function (MonitorTarget $target) use ($timeFormat, $grouped) {
+                $checks = $grouped->get($target->id) ?? $grouped->get((string) $target->id) ?? new Collection;
                 $points = $checks
                     ->sortBy('checked_at')
                     ->values()
@@ -160,13 +163,13 @@ class SiteLineChart
 
         $tz = (string) config('app.timezone');
         $axisFormat = $this->timeFormat(
-            \Carbon\Carbon::createFromTimestamp($minTs, $tz),
-            \Carbon\Carbon::createFromTimestamp($maxTs, $tz),
+            Carbon::createFromTimestamp($minTs, $tz),
+            Carbon::createFromTimestamp($maxTs, $tz),
         );
-        $startLabel = \Carbon\Carbon::createFromTimestamp($minTs, $tz)->format($axisFormat);
-        $endLabel = \Carbon\Carbon::createFromTimestamp($maxTs, $tz)->format($axisFormat);
+        $startLabel = Carbon::createFromTimestamp($minTs, $tz)->format($axisFormat);
+        $endLabel = Carbon::createFromTimestamp($maxTs, $tz)->format($axisFormat);
         $midTs = (int) round(($minTs + $maxTs) / 2);
-        $midLabel = \Carbon\Carbon::createFromTimestamp($midTs, $tz)->format($axisFormat);
+        $midLabel = Carbon::createFromTimestamp($midTs, $tz)->format($axisFormat);
         $step = max(1, (int) ($maxValue / 4));
         $ticks = array_values(array_unique([0, $step, $step * 2, $step * 3, $maxValue]));
 
@@ -194,6 +197,29 @@ class SiteLineChart
             'visible_count' => $visible->count(),
             'site_count' => count($series),
         ];
+    }
+
+    /**
+     * @param  Collection<int, MonitorTarget>  $targets
+     * @return Collection<int|string, Collection<int, MonitorCheck>>
+     */
+    private function checksForTargets(Collection $targets, ?DateTimeInterface $since): Collection
+    {
+        if ($targets->isEmpty()) {
+            return new Collection;
+        }
+
+        $since ??= now()->subDay();
+        $ids = $targets->pluck('id');
+        $limit = min(400, max(40, $ids->count() * 60));
+
+        return MonitorCheck::query()
+            ->whereIn('monitor_target_id', $ids)
+            ->where('checked_at', '>=', $since)
+            ->latest('checked_at')
+            ->limit($limit)
+            ->get(['id', 'monitor_target_id', 'ok', 'total_ms', 'payload', 'checked_at', 'availability_reason'])
+            ->groupBy('monitor_target_id');
     }
 
     /**

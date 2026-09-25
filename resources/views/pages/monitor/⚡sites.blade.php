@@ -497,9 +497,8 @@ new #[Title('Sitios')] class extends Component
         $this->js('window.notify({ heading: "Sitio eliminado", variant: "success" })');
     }
 
-    public function tick(MonitorEngine $engine): void
+    public function tick(): void
     {
-        $engine->runDueFromWeb();
         unset($this->sites, $this->siteConditions);
     }
 
@@ -516,7 +515,7 @@ new #[Title('Sitios')] class extends Component
     }
 }; ?>
 
-<section class="flex w-full flex-col gap-6" wire:poll.5s="tick">
+<section class="flex w-full flex-col gap-6" wire:poll.10s="tick">
     <div class="flex items-end justify-between gap-3">
         <div>
             <flux:heading size="xl">Sitios web</flux:heading>

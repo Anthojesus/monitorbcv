@@ -167,7 +167,7 @@ class MonitorDashboardTest extends TestCase
     }
 
     #[Test]
-    public function dashboard_tick_runs_due_probes(): void
+    public function dashboard_tick_does_not_run_probes(): void
     {
         $user = User::factory()->create();
         $target = MonitorTarget::factory()->create([
@@ -182,12 +182,7 @@ class MonitorDashboardTest extends TestCase
         });
 
         $this->mock(HttpProbe::class, function ($mock): void {
-            $mock->shouldReceive('probe')->andReturn([
-                'ok' => true,
-                'http' => ['status' => 200],
-                'timings_ms' => ['total' => 42],
-                'availability' => ['reason' => 'ok'],
-            ]);
+            $mock->shouldReceive('probe')->never();
         });
 
         Livewire::actingAs($user)
@@ -196,7 +191,7 @@ class MonitorDashboardTest extends TestCase
             ->assertOk()
             ->assertSee('Radar BCV');
 
-        $this->assertNotNull($target->fresh()->last_checked_at);
+        $this->assertNull($target->fresh()->last_checked_at);
     }
 
     #[Test]
