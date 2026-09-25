@@ -21,13 +21,11 @@ class SiteCondition
         $unmonitored = $latest instanceof MonitorCheck
             ? $latest->isProbeUnavailable()
             : ((bool) data_get($payload, 'probe_unavailable') || $reason === 'probe_unavailable');
-        $probeHealthy ??= app(FastApiProbe::class)->healthy($target->probeOrigin());
-
-        if ($unmonitored && ! $probeHealthy) {
+        if ($unmonitored && $probeHealthy !== true) {
             return $this->row('unmonitored', 'No monitoreado', 'amber', 'warning', 'La sonda de este origen no está chequeando. No es una falla del portal.');
         }
 
-        if ($unmonitored && $probeHealthy) {
+        if ($unmonitored && $probeHealthy === true) {
             $side = MonitorCopy::originLabel($target->probeOrigin());
 
             if ($target->last_ok === null) {
@@ -129,6 +127,7 @@ class SiteCondition
                 $ttfb = data_get($checkPayload, 'timings_ms.ttfb');
                 if (is_numeric($ttfb) && (int) $ttfb > $warningMs) {
                     $streak++;
+
                     continue;
                 }
 

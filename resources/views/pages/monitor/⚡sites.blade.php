@@ -2,7 +2,6 @@
 
 use App\Models\MonitorCommand;
 use App\Models\MonitorTarget;
-use App\Services\Monitoring\FastApiProbe;
 use App\Services\Monitoring\MonitorCopy;
 use App\Services\Monitoring\MonitorEngine;
 use App\Services\Monitoring\MonitorSettings;
@@ -117,16 +116,11 @@ new #[Title('Sitios')] class extends Component
     #[Computed]
     public function siteConditions(): array
     {
-        $runtime = app(FastApiProbe::class)->runtime();
         $condition = app(SiteCondition::class);
         $rows = [];
 
         foreach ($this->sites as $site) {
-            $rows[$site->id] = $condition->evaluate(
-                $site,
-                $site->checks,
-                (bool) data_get($runtime, $site->probeOrigin().'.api.ok'),
-            );
+            $rows[$site->id] = $condition->evaluate($site, $site->checks);
         }
 
         return $rows;

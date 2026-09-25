@@ -125,6 +125,8 @@ class MonitorDashboardTest extends TestCase
             ]),
         ]);
 
+        app(FastApiProbe::class)->refreshRuntime();
+
         $this->actingAs(User::factory()->create())
             ->get(route('dashboard'))
             ->assertOk()

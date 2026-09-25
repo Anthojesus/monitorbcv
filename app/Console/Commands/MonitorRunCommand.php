@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\MonitorTarget;
+use App\Services\Monitoring\FastApiProbe;
 use App\Services\Monitoring\MonitorEngine;
 use Illuminate\Console\Command;
 
@@ -12,8 +13,10 @@ class MonitorRunCommand extends Command
 
     protected $description = 'Ejecuta el probe HTTP y guarda el JSON detallado de cada sitio';
 
-    public function handle(MonitorEngine $engine): int
+    public function handle(MonitorEngine $engine, FastApiProbe $probe): int
     {
+        $probe->refreshRuntime();
+
         if ($this->option('id')) {
             $target = MonitorTarget::query()->find($this->option('id'));
 

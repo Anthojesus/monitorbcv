@@ -51,7 +51,28 @@ class FastApiProbe
             ];
         }
 
-        return $this->runtimeCache[$origin] ??= $this->rememberRuntime($origin);
+        return $this->runtimeCache[$origin] ??= $this->cachedRuntime($origin);
+    }
+
+    /**
+     * Pide /health a las sondas. Solo el cron debe llamarlo; la web nunca espera esto.
+     *
+     * @return array<string, mixed>
+     */
+    public function refreshRuntime(?string $origin = null): array
+    {
+        if ($origin === null) {
+            $this->refreshRuntime(MonitorTarget::ORIGIN_INTERNAL);
+            $this->refreshRuntime(MonitorTarget::ORIGIN_EXTERNAL);
+
+            return $this->runtime();
+        }
+
+        $detected = $this->detectRuntime($origin);
+        Cache::put($this->runtimeCacheKey($origin), $detected, max(5, (int) config('monitor.runtime_cache_seconds', 20)));
+        $this->runtimeCache[$origin] = $detected;
+
+        return $detected;
     }
 
     /**
@@ -175,11 +196,47 @@ class FastApiProbe
      *     python: array{ok: bool, label: string, hint: string}
      * }
      */
-    private function rememberRuntime(string $origin): array
+    /**
+     * @return array{
+     *     engine: string,
+     *     api: array{ok: bool, label: string, hint: string},
+     *     python: array{ok: bool, label: string, hint: string}
+     * }
+     */
+    private function cachedRuntime(string $origin): array
     {
-        $ttl = max(5, (int) config('monitor.runtime_cache_seconds', 20));
+        $cached = Cache::get($this->runtimeCacheKey($origin));
 
-        return Cache::remember('monitor:probe-runtime:'.$origin, $ttl, fn (): array => $this->detectRuntime($origin));
+        if (is_array($cached) && isset($cached['api'], $cached['python'], $cached['engine'])) {
+            return $cached;
+        }
+
+        $config = $this->configFor($origin);
+
+        if (! $config['enabled'] || $config['url'] === '') {
+            return $this->detectRuntime($origin);
+        }
+
+        $label = $origin === MonitorTarget::ORIGIN_EXTERNAL ? 'Exterior' : 'Interior';
+
+        return [
+            'engine' => 'php-curl',
+            'api' => [
+                'ok' => false,
+                'label' => 'API '.$label,
+                'hint' => 'El estado de la sonda se actualiza en segundo plano. No bloquea esta pantalla.',
+            ],
+            'python' => [
+                'ok' => false,
+                'label' => 'Sonda Python '.$label,
+                'hint' => 'El cron refresca /health. Esta página no espera a las sondas.',
+            ],
+        ];
+    }
+
+    private function runtimeCacheKey(string $origin): string
+    {
+        return 'monitor:probe-runtime:'.$origin;
     }
 
     /**

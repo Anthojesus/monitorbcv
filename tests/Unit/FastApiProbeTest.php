@@ -49,6 +49,7 @@ class FastApiProbeTest extends TestCase
             ]),
         ]);
 
+        app(FastApiProbe::class)->refreshRuntime();
         $runtime = app(FastApiProbe::class)->runtime();
 
         $this->assertTrue($runtime['api']['ok']);
@@ -56,6 +57,25 @@ class FastApiProbeTest extends TestCase
         $this->assertTrue($runtime['internal']['api']['ok']);
         $this->assertFalse($runtime['external']['api']['ok']);
         $this->assertSame('fastapi', $runtime['engine']);
+    }
+
+    #[Test]
+    public function runtime_does_not_call_health_from_the_web(): void
+    {
+        config([
+            'monitor.probes.internal.enabled' => true,
+            'monitor.probes.internal.url' => 'http://127.0.0.1:8100',
+            'monitor.probes.external.enabled' => true,
+            'monitor.probes.external.url' => 'https://monitor.example.test',
+        ]);
+
+        Http::fake();
+
+        $runtime = app(FastApiProbe::class)->runtime();
+
+        $this->assertFalse($runtime['internal']['api']['ok']);
+        $this->assertFalse($runtime['external']['api']['ok']);
+        Http::assertNothingSent();
     }
 
     #[Test]
@@ -75,7 +95,7 @@ class FastApiProbeTest extends TestCase
             ]),
         ]);
 
-        app(FastApiProbe::class)->runtime('internal');
+        app(FastApiProbe::class)->refreshRuntime('internal');
         app()->forgetInstance(FastApiProbe::class);
         app(FastApiProbe::class)->runtime('internal');
 
@@ -153,7 +173,7 @@ class FastApiProbeTest extends TestCase
             ]),
         ]);
 
-        $runtime = app(FastApiProbe::class)->runtime('external');
+        $runtime = app(FastApiProbe::class)->refreshRuntime('external');
 
         $this->assertTrue($runtime['api']['ok']);
         $this->assertTrue($runtime['python']['ok']);
