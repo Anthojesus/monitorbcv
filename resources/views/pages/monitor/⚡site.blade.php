@@ -99,7 +99,7 @@ new #[Title('Detalle del sitio')] class extends Component
         return MonitorCheck::query()
             ->where('monitor_target_id', $this->targetId)
             ->latest('checked_at')
-            ->limit(40)
+            ->limit(8)
             ->get();
     }
 
@@ -127,7 +127,12 @@ new #[Title('Detalle del sitio')] class extends Component
     #[Computed]
     public function windowStats(): array
     {
-        $points = app(SiteLineChart::class)->checksForChart($this->targetId, $this->chartSince());
+        $points = MonitorCheck::query()
+            ->where('monitor_target_id', $this->targetId)
+            ->where('checked_at', '>=', $this->chartSince())
+            ->latest('checked_at')
+            ->limit(60)
+            ->get();
 
         return CheckStats::fromChecks($points);
     }
@@ -138,12 +143,16 @@ new #[Title('Detalle del sitio')] class extends Component
     #[Computed]
     public function pairDiagnosis(): ?array
     {
+        $pairOrigin = $this->target->isExternalOrigin()
+            ? MonitorTarget::ORIGIN_INTERNAL
+            : MonitorTarget::ORIGIN_EXTERNAL;
+        $needle = OriginCorrelation::normalizeUrl($this->target->url);
         $pair = MonitorTarget::query()
-            ->with(['checks' => fn ($query) => $query->latest('checked_at')->limit(8)])
+            ->with('latestCheck')
             ->whereKeyNot($this->targetId)
+            ->where('probe_origin', $pairOrigin)
             ->get()
-            ->first(fn (MonitorTarget $other): bool => OriginCorrelation::normalizeUrl($other->url) === OriginCorrelation::normalizeUrl($this->target->url)
-                && $other->probeOrigin() !== $this->target->probeOrigin());
+            ->first(fn (MonitorTarget $other): bool => OriginCorrelation::normalizeUrl($other->url) === $needle);
 
         if ($pair === null) {
             return null;
@@ -151,7 +160,10 @@ new #[Title('Detalle del sitio')] class extends Component
 
         $condition = app(SiteCondition::class);
         $thisCondition = $this->condition;
-        $pairCondition = $condition->evaluate($pair, $pair->checks);
+        $pairCondition = $condition->evaluate(
+            $pair,
+            collect($pair->latestCheck ? [$pair->latestCheck] : []),
+        );
 
         return app(OriginCorrelation::class)->forPair($this->target, $pair, $thisCondition, $pairCondition);
     }
@@ -168,8 +180,11 @@ new #[Title('Detalle del sitio')] class extends Component
             return null;
         }
 
-        $proxy->load(['checks' => fn ($query) => $query->latest('checked_at')->limit(8)]);
-        $proxyCondition = app(SiteCondition::class)->evaluate($proxy, $proxy->checks);
+        $proxy->loadMissing('latestCheck');
+        $proxyCondition = app(SiteCondition::class)->evaluate(
+            $proxy,
+            collect($proxy->latestCheck ? [$proxy->latestCheck] : []),
+        );
 
         return app(ProxyCorrelation::class)->diagnose($this->target, $proxy, $this->condition, $proxyCondition);
     }
@@ -204,6 +219,7 @@ new #[Title('Detalle del sitio')] class extends Component
     {
         return MonitorCheck::query()
             ->where('monitor_target_id', $this->targetId)
+            ->where('checked_at', '>=', now()->subDay())
             ->latest('checked_at')
             ->paginate(10);
     }
