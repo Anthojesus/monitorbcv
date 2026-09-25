@@ -473,7 +473,7 @@ new #[Title('Sitios')] class extends Component
 
     public function tick(MonitorEngine $engine): void
     {
-        $engine->runDue();
+        $engine->runDueFromWeb();
         unset($this->sites);
     }
 

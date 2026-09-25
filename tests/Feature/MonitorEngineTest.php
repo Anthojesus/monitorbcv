@@ -66,6 +66,20 @@ class MonitorEngineTest extends TestCase
     }
 
     #[Test]
+    public function web_tick_skips_probes_when_the_scheduler_just_ran(): void
+    {
+        MonitorTarget::factory()->create([
+            'last_checked_at' => now()->subSeconds(3),
+        ]);
+
+        $this->mock(FastApiProbe::class, function ($mock): void {
+            $mock->shouldReceive('enabled')->never();
+        });
+
+        $this->assertSame(0, app(MonitorEngine::class)->runDueFromWeb());
+    }
+
+    #[Test]
     public function run_due_checks_the_oldest_target_first_when_limited(): void
     {
         $oldest = MonitorTarget::factory()->create([

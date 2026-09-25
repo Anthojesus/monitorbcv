@@ -4,6 +4,8 @@ namespace App\Services\Monitoring;
 
 use App\Models\MonitorCheck;
 use App\Models\MonitorTarget;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -87,8 +89,20 @@ class MonitorEngine
         }
     }
 
+    public function runDueFromWeb(?int $limit = null): int
+    {
+        $staleAfter = max(5, (int) config('monitor.web_tick_stale_seconds', 12));
+        $latest = MonitorTarget::query()->whereNotNull('last_checked_at')->max('last_checked_at');
+
+        if ($latest && Carbon::parse($latest)->greaterThan(now()->subSeconds($staleAfter))) {
+            return 0;
+        }
+
+        return $this->runDue($limit);
+    }
+
     /**
-     * @return \Illuminate\Support\Collection<int, MonitorTarget>
+     * @return Collection<int, MonitorTarget>
      */
     private function dueTargets()
     {

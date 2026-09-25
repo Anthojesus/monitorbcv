@@ -9,9 +9,13 @@ return [
 
     'interval' => (int) env('MONITOR_INTERVAL', 5),
 
-    'web_tick_limit' => (int) env('MONITOR_WEB_TICK_LIMIT', 3),
+    'web_tick_limit' => (int) env('MONITOR_WEB_TICK_LIMIT', 2),
 
-    'web_tick_budget_ms' => (int) env('MONITOR_WEB_TICK_BUDGET_MS', 12000),
+    'web_tick_budget_ms' => (int) env('MONITOR_WEB_TICK_BUDGET_MS', 2500),
+
+    'runtime_cache_seconds' => (int) env('MONITOR_RUNTIME_CACHE_SECONDS', 20),
+
+    'web_tick_stale_seconds' => (int) env('MONITOR_WEB_TICK_STALE_SECONDS', 12),
 
     'use_os_trust_store' => (bool) env('MONITOR_USE_OS_TRUST_STORE', true),
 

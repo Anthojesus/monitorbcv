@@ -210,7 +210,7 @@ new #[Title('Detalle del sitio')] class extends Component
 
     public function tick(MonitorEngine $engine): void
     {
-        $engine->runDue();
+        $engine->runDueFromWeb();
         unset($this->target, $this->checks, $this->reliability, $this->chartSeries, $this->recentCommandRuns, $this->selectedCommand, $this->chartRangeOptions, $this->condition, $this->windowStats, $this->pairDiagnosis, $this->proxyDiagnosis);
     }
 

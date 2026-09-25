@@ -45,7 +45,7 @@ new #[Title('Centro de Control')] class extends Component
 
     public function tick(MonitorEngine $engine): void
     {
-        $engine->runDue();
+        $engine->runDueFromWeb();
         unset($this->metrics, $this->tableLayout);
     }
 

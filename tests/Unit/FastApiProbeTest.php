@@ -59,6 +59,30 @@ class FastApiProbeTest extends TestCase
     }
 
     #[Test]
+    public function runtime_health_is_cached_across_instances(): void
+    {
+        config([
+            'monitor.probes.internal.enabled' => true,
+            'monitor.probes.internal.url' => 'http://127.0.0.1:8100',
+            'monitor.probes.external.enabled' => false,
+            'monitor.runtime_cache_seconds' => 20,
+        ]);
+
+        Http::fake([
+            'http://127.0.0.1:8100/health' => Http::response([
+                'status' => 'ok',
+                'probe' => 'ok',
+            ]),
+        ]);
+
+        app(FastApiProbe::class)->runtime('internal');
+        app()->forgetInstance(FastApiProbe::class);
+        app(FastApiProbe::class)->runtime('internal');
+
+        Http::assertSentCount(1);
+    }
+
+    #[Test]
     public function probe_sends_bearer_token(): void
     {
         config([

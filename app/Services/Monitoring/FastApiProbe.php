@@ -6,6 +6,7 @@ use App\Models\MonitorCheck;
 use App\Models\MonitorTarget;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Throwable;
 
@@ -50,7 +51,7 @@ class FastApiProbe
             ];
         }
 
-        return $this->runtimeCache[$origin] ??= $this->detectRuntime($origin);
+        return $this->runtimeCache[$origin] ??= $this->rememberRuntime($origin);
     }
 
     /**
@@ -174,6 +175,20 @@ class FastApiProbe
      *     python: array{ok: bool, label: string, hint: string}
      * }
      */
+    private function rememberRuntime(string $origin): array
+    {
+        $ttl = max(5, (int) config('monitor.runtime_cache_seconds', 20));
+
+        return Cache::remember('monitor:probe-runtime:'.$origin, $ttl, fn (): array => $this->detectRuntime($origin));
+    }
+
+    /**
+     * @return array{
+     *     engine: string,
+     *     api: array{ok: bool, label: string, hint: string},
+     *     python: array{ok: bool, label: string, hint: string}
+     * }
+     */
     private function detectRuntime(string $origin): array
     {
         $config = $this->configFor($origin);
@@ -262,7 +277,7 @@ class FastApiProbe
      */
     private function healthClient(array $config, float $timeout): PendingRequest
     {
-        $connect = max(3.0, (float) ($config['connect_timeout'] ?? 3));
+        $connect = max(2.0, (float) ($config['connect_timeout'] ?? 3));
 
         return Http::connectTimeout($connect)->timeout($timeout);
     }
