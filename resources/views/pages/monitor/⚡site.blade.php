@@ -10,6 +10,7 @@ use App\Services\Monitoring\MonitorCopy;
 use App\Services\Monitoring\MonitorEngine;
 use App\Services\Monitoring\MonitorSettings;
 use App\Services\Monitoring\OriginCorrelation;
+use App\Services\Monitoring\ProxyCorrelation;
 use App\Services\Monitoring\SiteCondition;
 use App\Services\Monitoring\SiteLineChart;
 use App\Services\RemoteCommand\RemoteCommandException;
@@ -45,6 +46,8 @@ new #[Title('Detalle del sitio')] class extends Component
 
     public bool $showCommandForm = false;
 
+    public bool $outputCleared = false;
+
     /**
      * @var list<int>
      */
@@ -59,7 +62,7 @@ new #[Title('Detalle del sitio')] class extends Component
     public function target(): MonitorTarget
     {
         return MonitorTarget::query()
-            ->with(['server', 'commands'])
+            ->with(['server', 'commands', 'proxy', 'frontedSites'])
             ->findOrFail($this->targetId);
     }
 
@@ -154,6 +157,24 @@ new #[Title('Detalle del sitio')] class extends Component
     }
 
     /**
+     * @return array<string, mixed>|null
+     */
+    #[Computed]
+    public function proxyDiagnosis(): ?array
+    {
+        $proxy = $this->target->proxy;
+
+        if ($proxy === null) {
+            return null;
+        }
+
+        $proxy->load(['checks' => fn ($query) => $query->latest('checked_at')->limit(8)]);
+        $proxyCondition = app(SiteCondition::class)->evaluate($proxy, $proxy->checks);
+
+        return app(ProxyCorrelation::class)->diagnose($this->target, $proxy, $this->condition, $proxyCondition);
+    }
+
+    /**
      * @return list<array<string, mixed>>
      */
     #[Computed]
@@ -190,7 +211,7 @@ new #[Title('Detalle del sitio')] class extends Component
     public function tick(MonitorEngine $engine): void
     {
         $engine->runDue();
-        unset($this->target, $this->checks, $this->reliability, $this->chartSeries, $this->recentCommandRuns, $this->selectedCommand, $this->chartRangeOptions, $this->condition, $this->windowStats, $this->pairDiagnosis);
+        unset($this->target, $this->checks, $this->reliability, $this->chartSeries, $this->recentCommandRuns, $this->selectedCommand, $this->chartRangeOptions, $this->condition, $this->windowStats, $this->pairDiagnosis, $this->proxyDiagnosis);
     }
 
     public function toggleChartSite(int $id): void
@@ -215,7 +236,7 @@ new #[Title('Detalle del sitio')] class extends Component
     public function probe(MonitorEngine $engine): void
     {
         $check = $engine->run($this->target);
-        unset($this->target, $this->checks, $this->reliability, $this->chartSeries, $this->condition, $this->windowStats, $this->pairDiagnosis);
+        unset($this->target, $this->checks, $this->reliability, $this->chartSeries, $this->condition, $this->windowStats, $this->pairDiagnosis, $this->proxyDiagnosis);
         $this->resetPage();
 
         $unavailable = (bool) data_get($check->payload, 'probe_unavailable');
@@ -250,6 +271,7 @@ new #[Title('Detalle del sitio')] class extends Component
                 $this->changeConfirmation,
             );
             $this->changeConfirmation = '';
+            $this->outputCleared = false;
             unset($this->target, $this->recentCommandRuns, $this->selectedCommand);
 
             $this->js('window.notify('.json_encode([
@@ -266,6 +288,12 @@ new #[Title('Detalle del sitio')] class extends Component
                 'variant' => 'danger',
             ]).')');
         }
+    }
+
+    public function clearCommandOutput(): void
+    {
+        abort_unless(Auth::user()?->canRunCommands(), 403);
+        $this->outputCleared = true;
     }
 
     public function openCreateCommand(): void
@@ -397,6 +425,13 @@ new #[Title('Detalle del sitio')] class extends Component
                 @if ($this->target->isHealth())
                     <flux:badge color="sky">Web service</flux:badge>
                 @endif
+                @if ($this->target->isProxy())
+                    <flux:badge color="amber">Proxy Linux</flux:badge>
+                @elseif ($this->target->proxy)
+                    <a href="{{ route('monitor.sites.show', $this->target->proxy) }}" wire:navigate>
+                        <flux:badge color="amber">Proxy {{ $this->target->proxy->name }}</flux:badge>
+                    </a>
+                @endif
             </div>
             <flux:text class="font-mono">{{ $this->target->url }}</flux:text>
             @if (($this->condition['key'] ?? '') === 'degraded')
@@ -411,6 +446,27 @@ new #[Title('Detalle del sitio')] class extends Component
             <span class="font-medium">{{ $this->pairDiagnosis['title'] }}.</span>
             {{ $this->pairDiagnosis['detail'] }}
         </flux:callout>
+    @endif
+
+    @if ($this->proxyDiagnosis)
+        <flux:callout icon="exclamation-triangle" :variant="($this->proxyDiagnosis['tone'] ?? '') === 'rose' ? 'danger' : 'warning'">
+            <span class="font-medium">{{ $this->proxyDiagnosis['title'] }}.</span>
+            {{ $this->proxyDiagnosis['detail'] }}
+            <a class="ml-1 underline" href="{{ route('monitor.sites.show', $this->target->proxy_target_id) }}" wire:navigate>Ver proxy</a>
+        </flux:callout>
+    @endif
+
+    @if ($this->target->isProxy() && $this->target->frontedSites->isNotEmpty())
+        <flux:card class="space-y-2">
+            <flux:heading size="sm">Aplicaciones detrás de este proxy</flux:heading>
+            <div class="flex flex-wrap gap-2">
+                @foreach ($this->target->frontedSites as $fronted)
+                    <a href="{{ route('monitor.sites.show', $fronted) }}" wire:navigate>
+                        <flux:badge :color="$fronted->last_ok === false ? 'rose' : 'zinc'">{{ $fronted->name }}</flux:badge>
+                    </a>
+                @endforeach
+            </div>
+        </flux:card>
     @endif
 
     @php
@@ -473,14 +529,26 @@ new #[Title('Detalle del sitio')] class extends Component
                                 </flux:select.option>
                             @endforeach
                         </flux:select>
-                        <flux:button
-                            wire:click="execute"
-                            wire:loading.attr="disabled"
-                            :variant="$selected?->isChange() ? 'danger' : 'primary'"
-                            :disabled="! $server?->isReady() || $selected === null || ($selected->isChange() && $changeConfirmation !== $this->target->name)"
-                        >
-                            {{ $selected?->isChange() ? 'Ejecutar cambio' : 'Ejecutar consulta' }}
-                        </flux:button>
+                        <div class="flex flex-wrap items-center gap-2">
+                            <flux:button
+                                wire:click="execute"
+                                wire:loading.attr="disabled"
+                                :variant="$selected?->isChange() ? 'danger' : 'primary'"
+                                :disabled="! $server?->isReady() || $selected === null || ($selected->isChange() && $changeConfirmation !== $this->target->name)"
+                            >
+                                {{ $selected?->isChange() ? 'Ejecutar cambio' : 'Ejecutar consulta' }}
+                            </flux:button>
+                            @if ($latestRun && ! $this->outputCleared)
+                                <flux:button
+                                    variant="ghost"
+                                    icon="arrow-path"
+                                    wire:click="clearCommandOutput"
+                                    wire:loading.attr="disabled"
+                                >
+                                    Reiniciar salida
+                                </flux:button>
+                            @endif
+                        </div>
                     </div>
                 @endif
 
@@ -509,11 +577,18 @@ new #[Title('Detalle del sitio')] class extends Component
                 @endif
             </div>
 
-            @if ($latestRun)
+            @if ($latestRun && $this->outputCleared)
+                <flux:callout icon="information-circle">
+                    Salida limpia. Ejecute el siguiente comando para validar el resultado.
+                </flux:callout>
+            @elseif ($latestRun)
                 <div class="space-y-2">
                     <div class="flex flex-wrap items-center gap-2">
                         <flux:heading size="sm">Última salida</flux:heading>
                         <flux:badge :color="$latestRun->succeeded() ? 'lime' : 'rose'">{{ $latestRun->statusLabel() }}</flux:badge>
+                        <flux:button size="sm" variant="ghost" icon="arrow-path" wire:click="clearCommandOutput">
+                            Reiniciar
+                        </flux:button>
                         <flux:text size="sm">
                             {{ $latestRun->command_label }}
                             · {{ $latestRun->user?->name ?? 'usuario' }}

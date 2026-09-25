@@ -15,7 +15,10 @@ class DashboardMetrics
     public function all(?DateTimeInterface $since = null): array
     {
         $since ??= now()->subDay();
-        $targets = MonitorTarget::query()->with(['checks' => fn ($query) => $query->latest('checked_at')->limit(40)])->get();
+        $targets = MonitorTarget::query()->with([
+            'checks' => fn ($query) => $query->latest('checked_at')->limit(40),
+            'proxy.checks' => fn ($query) => $query->latest('checked_at')->limit(8),
+        ])->get();
         $checks = MonitorCheck::query()
             ->where('checked_at', '>=', $since)
             ->latest('checked_at')
@@ -64,6 +67,7 @@ class DashboardMetrics
         $avgNetMs = $networkSamples->isEmpty() ? 0 : (int) round($networkSamples->avg());
         $sslWarnDays = max(1, (int) config('monitor.degradation.ssl_warning_days', 15));
         $condition = app(SiteCondition::class);
+        $proxyCorrelation = app(ProxyCorrelation::class);
         $conditions = [];
         foreach ($targets as $target) {
             $originHealthy = (bool) data_get($runtime, $target->probeOrigin().'.api.ok');
@@ -153,7 +157,7 @@ class DashboardMetrics
             'targets' => $targets
                 ->sortBy(fn (MonitorTarget $target) => $target->last_ok === false ? 0 : 1)
                 ->values()
-                ->map(function (MonitorTarget $target) use ($conditions, $diagnoses, $runtime) {
+                ->map(function (MonitorTarget $target) use ($conditions, $diagnoses, $runtime, $condition, $proxyCorrelation) {
                     $recent = $target->checks;
                     $latest = $recent->first();
                     $payload = $latest instanceof MonitorCheck ? $latest->payload : [];
@@ -166,12 +170,24 @@ class DashboardMetrics
                     $pair = collect($diagnoses)->first(
                         fn (array $row): bool => ($row['internal_id'] ?? 0) === $target->id || ($row['external_id'] ?? 0) === $target->id
                     );
+                    $proxy = $target->proxy;
+                    $proxyCondition = $proxy instanceof MonitorTarget
+                        ? ($conditions[$proxy->id] ?? $condition->evaluate(
+                            $proxy,
+                            $proxy->checks,
+                            (bool) data_get($runtime, $proxy->probeOrigin().'.api.ok'),
+                        ))
+                        : null;
+                    $proxyDiagnosis = $proxyCorrelation->diagnose($target, $proxy, $siteCondition, $proxyCondition);
 
                     return [
                         'id' => $target->id,
                         'name' => $target->name,
                         'url' => $target->url,
                         'kind' => $target->kind,
+                        'proxy_name' => $proxy?->name,
+                        'proxy_id' => $proxy?->id,
+                        'proxy_diagnosis' => $proxyDiagnosis,
                         'probe_origin' => $target->probeOrigin(),
                         'origin_label' => MonitorCopy::originLabel($target->probeOrigin()),
                         'probe_unavailable' => $probeUnavailable && ! $originHealthy,

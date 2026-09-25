@@ -55,6 +55,8 @@ class MonitorSeedCatalogCommand extends Command
             $this->attachQueryCommands($target);
         }
 
+        $this->linkProxies($catalog['sites']);
+
         foreach ($catalog['settings'] as $key => $value) {
             MonitorSetting::setValue($key, (string) $value);
         }
@@ -88,6 +90,36 @@ class MonitorSeedCatalogCommand extends Command
             'sites' => array_values($catalog['sites'] ?? []),
             'settings' => $catalog['settings'] ?? ['chart_history_max_days' => '30'],
         ];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $sites
+     */
+    private function linkProxies(array $sites): void
+    {
+        foreach ($sites as $site) {
+            $proxyName = trim((string) ($site['proxy_name'] ?? ''));
+
+            if ($proxyName === '') {
+                continue;
+            }
+
+            $target = MonitorTarget::query()
+                ->where('name', $site['name'])
+                ->where('probe_origin', $site['probe_origin'] ?? MonitorTarget::ORIGIN_INTERNAL)
+                ->where('kind', '!=', MonitorTarget::KIND_PROXY)
+                ->first();
+            $proxy = MonitorTarget::query()
+                ->where('name', $proxyName)
+                ->where('kind', MonitorTarget::KIND_PROXY)
+                ->first();
+
+            if ($target === null || $proxy === null || $target->id === $proxy->id) {
+                continue;
+            }
+
+            $target->forceFill(['proxy_target_id' => $proxy->id])->save();
+        }
     }
 
     private function attachQueryCommands(MonitorTarget $target): void

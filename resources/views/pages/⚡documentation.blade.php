@@ -23,7 +23,7 @@ new #[Title('Documentación')] class extends Component
         }
     }"
     x-init="
-        const ids = ['estado','motivos','fiabilidad','latencia','tiempo-total','certificado','headers','servidor','health','sondas','despliegue','graficos','comandos','roles','guion'];
+        const ids = ['estado','motivos','fiabilidad','latencia','tiempo-total','certificado','headers','servidor','health','proxy','sondas','despliegue','graficos','comandos','roles','guion'];
         const observer = new IntersectionObserver((entries) => {
             entries.forEach((entry) => {
                 if (entry.isIntersecting) active = entry.target.id;
@@ -109,6 +109,7 @@ new #[Title('Documentación')] class extends Component
                     ['headers', 'Headers de seguridad'],
                     ['servidor', 'Servidor web'],
                     ['health', 'Web services'],
+                    ['proxy', 'Proxy Linux'],
                     ['sondas', 'API interior y exterior'],
                     ['despliegue', 'Despliegue VPS'],
                     ['graficos', 'Gráficos'],
@@ -352,6 +353,55 @@ new #[Title('Documentación')] class extends Component
                     </flux:text>
                     <flux:callout icon="exclamation-triangle" variant="warning">
                         Si una dependencia está DOWN, el sitio puede marcarse DOWN aunque Nginx responda 200. El problema está detrás del balanceador, no necesariamente en el HTTP de frente.
+                    </flux:callout>
+                </flux:card>
+            </article>
+
+            <article id="proxy" x-show="visible('proxy linux nginx haproxy upstream aplicacion app falla comando ssh')" x-cloak class="scroll-mt-8">
+                <flux:card class="space-y-4">
+                    <div class="flex flex-wrap items-center gap-2">
+                        <flux:heading size="lg">Proxy Linux</flux:heading>
+                        <flux:badge color="amber">Nginx / HAProxy</flux:badge>
+                    </div>
+                    <flux:text>
+                        Un destino tipo <strong>Proxy Linux</strong> es el front (Nginx, HAProxy u otro) que publica las apps.
+                        Se sondea como cualquier URL (puerto 80/443) y admite los mismos comandos SSH.
+                    </flux:text>
+                    <flux:text>
+                        En un portal o web service use <strong>Proxy que lo contiene</strong> para vincularlo.
+                        El Centro de Control compara ambos estados:
+                    </flux:text>
+                    <div class="overflow-x-auto rounded-lg border border-zinc-200 dark:border-white/10">
+                        <table class="min-w-full text-left text-sm">
+                            <thead class="bg-zinc-50 text-zinc-500 dark:bg-white/5 dark:text-zinc-400">
+                                <tr>
+                                    <th class="px-3 py-2.5 font-medium">App</th>
+                                    <th class="px-3 py-2.5 font-medium">Proxy</th>
+                                    <th class="px-3 py-2.5 font-medium">Lectura</th>
+                                </tr>
+                            </thead>
+                            <tbody class="text-zinc-700 dark:text-zinc-200">
+                                <tr class="border-t border-zinc-100 dark:border-white/5">
+                                    <td class="px-3 py-2.5">DOWN</td>
+                                    <td class="px-3 py-2.5">DOWN</td>
+                                    <td class="px-3 py-2.5">Falla del proxy. La app puede estar bien detrás.</td>
+                                </tr>
+                                <tr class="border-t border-zinc-100 dark:border-white/5">
+                                    <td class="px-3 py-2.5">DOWN</td>
+                                    <td class="px-3 py-2.5">UP</td>
+                                    <td class="px-3 py-2.5">Falla de la aplicación. El front responde; el corte está en el upstream.</td>
+                                </tr>
+                                <tr class="border-t border-zinc-100 dark:border-white/5">
+                                    <td class="px-3 py-2.5">UP</td>
+                                    <td class="px-3 py-2.5">DOWN</td>
+                                    <td class="px-3 py-2.5">Revise la URL de comprobación del proxy o un listener distinto.</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <flux:callout icon="information-circle">
+                        En el proxy configure SSH y comandos (nginx -t, systemctl status nginx, recargar).
+                        Eso confirma si el front está vivo cuando la app da 502/504.
                     </flux:callout>
                 </flux:card>
             </article>

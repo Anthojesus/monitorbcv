@@ -628,6 +628,11 @@ new #[Title('Centro de Control')] class extends Component
                                             @if (($site['kind'] ?? 'http') === 'health')
                                                 <flux:badge size="sm">WS</flux:badge>
                                             @endif
+                                            @if (($site['kind'] ?? '') === 'proxy')
+                                                <flux:badge size="sm" color="amber">Proxy</flux:badge>
+                                            @elseif (! empty($site['proxy_name']))
+                                                <flux:badge size="sm" color="amber">vía {{ $site['proxy_name'] }}</flux:badge>
+                                            @endif
                                         </span>
                                         <span class="mt-0.5 block truncate font-mono text-xs text-zinc-500" title="{{ $site['url'] }}">{{ $site['url'] }}</span>
                                         <span class="mt-0.5 block truncate text-[11px] text-zinc-400" title="{{ $server['product'] }}">
@@ -649,6 +654,9 @@ new #[Title('Centro de Control')] class extends Component
                                 <div class="mt-1 text-[11px] text-zinc-500">{{ $site['condition']['detail'] ?? $site['reason_label'] }}</div>
                                 @if (! empty($site['diagnosis']['title']))
                                     <div class="mt-1 text-[11px] font-medium text-amber-700 dark:text-amber-300">{{ $site['diagnosis']['title'] }}</div>
+                                @endif
+                                @if (! empty($site['proxy_diagnosis']['title']))
+                                    <div class="mt-1 text-[11px] font-medium text-rose-700 dark:text-rose-300">{{ $site['proxy_diagnosis']['title'] }}</div>
                                 @endif
                                 @if ($site['reason_hint'])
                                     <div class="mt-1.5 rounded-md bg-zinc-50 px-2 py-1.5 text-[11px] leading-4 text-pretty break-words text-zinc-600 dark:bg-white/5 dark:text-zinc-300">

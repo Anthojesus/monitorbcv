@@ -20,12 +20,15 @@ class MonitorExportCatalogCommand extends Command
         File::ensureDirectoryExists(dirname($path));
 
         $sites = MonitorTarget::query()
+            ->with('proxy:id,name')
             ->orderBy('id')
             ->get([
+                'id',
                 'name',
                 'url',
                 'kind',
                 'probe_origin',
+                'proxy_target_id',
                 'method',
                 'interval_seconds',
                 'timeout_seconds',
@@ -39,6 +42,7 @@ class MonitorExportCatalogCommand extends Command
                 'url' => $target->url,
                 'kind' => $target->kind,
                 'probe_origin' => $target->probeOrigin(),
+                'proxy_name' => $target->isProxy() ? null : $target->proxy?->name,
                 'method' => $target->method,
                 'interval_seconds' => $target->interval_seconds,
                 'timeout_seconds' => $target->timeout_seconds,

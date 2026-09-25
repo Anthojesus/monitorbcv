@@ -6,6 +6,7 @@ use Database\Factories\MonitorTargetFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
@@ -18,6 +19,7 @@ use Illuminate\Support\Collection;
  * @property string $url
  * @property string $kind
  * @property string $probe_origin
+ * @property int|null $proxy_target_id
  * @property string $method
  * @property int $interval_seconds
  * @property int $timeout_seconds
@@ -35,12 +37,15 @@ use Illuminate\Support\Collection;
  * @property-read Collection<int, MonitorCommand> $commands
  * @property-read Collection<int, MonitorCommandRun> $commandRuns
  * @property-read MonitorTargetServer|null $server
+ * @property-read MonitorTarget|null $proxy
+ * @property-read Collection<int, MonitorTarget> $frontedSites
  */
 #[Fillable([
     'name',
     'url',
     'kind',
     'probe_origin',
+    'proxy_target_id',
     'method',
     'interval_seconds',
     'timeout_seconds',
@@ -63,6 +68,12 @@ class MonitorTarget extends Model
     public const ORIGIN_INTERNAL = 'internal';
 
     public const ORIGIN_EXTERNAL = 'external';
+
+    public const KIND_HTTP = 'http';
+
+    public const KIND_HEALTH = 'health';
+
+    public const KIND_PROXY = 'proxy';
 
     /**
      * @return array<string, string>
@@ -92,6 +103,22 @@ class MonitorTarget extends Model
     public function server(): HasOne
     {
         return $this->hasOne(MonitorTargetServer::class);
+    }
+
+    /**
+     * @return BelongsTo<MonitorTarget, $this>
+     */
+    public function proxy(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'proxy_target_id');
+    }
+
+    /**
+     * @return HasMany<MonitorTarget, $this>
+     */
+    public function frontedSites(): HasMany
+    {
+        return $this->hasMany(self::class, 'proxy_target_id');
     }
 
     /**
@@ -171,7 +198,12 @@ class MonitorTarget extends Model
 
     public function isHealth(): bool
     {
-        return $this->kind === 'health';
+        return $this->kind === self::KIND_HEALTH;
+    }
+
+    public function isProxy(): bool
+    {
+        return $this->kind === self::KIND_PROXY;
     }
 
     public function probeOrigin(): string

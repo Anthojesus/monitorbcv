@@ -29,4 +29,12 @@ class MonitorTargetFactory extends Factory
             'is_enabled' => true,
         ];
     }
+
+    public function proxy(): static
+    {
+        return $this->state(fn (array $attributes): array => [
+            'kind' => MonitorTarget::KIND_PROXY,
+            'expected_status' => [MonitorTarget::ANY_HTTP_STATUS],
+        ]);
+    }
 }

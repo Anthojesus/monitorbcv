@@ -39,8 +39,11 @@ new #[Title('Sitios')] class extends Component
 
     public bool $verify_ssl = true;
 
-    #[Validate('required|in:http,health')]
+    #[Validate('required|in:http,health,proxy')]
     public string $kind = 'http';
+
+    #[Validate('nullable|integer')]
+    public ?int $proxy_target_id = null;
 
     #[Validate('required|in:internal,external')]
     public string $probe_origin = 'internal';
@@ -86,17 +89,31 @@ new #[Title('Sitios')] class extends Component
         return MonitorTarget::query()
             ->with([
                 'server',
+                'proxy',
                 'checks' => fn ($query) => $query->latest('checked_at')->limit(8),
             ])
             ->orderBy('name')
             ->get();
     }
 
+    /**
+     * @return Collection<int, MonitorTarget>
+     */
+    #[Computed]
+    public function proxyOptions(): Collection
+    {
+        return MonitorTarget::query()
+            ->where('kind', MonitorTarget::KIND_PROXY)
+            ->when($this->editingId, fn ($query) => $query->whereKeyNot($this->editingId))
+            ->orderBy('name')
+            ->get(['id', 'name', 'url']);
+    }
+
     public function updatedUrl(): void
     {
         $url = strtolower($this->url);
 
-        if (str_contains($url, '/health') || str_contains($url, '/actuator')) {
+        if ($this->kind !== MonitorTarget::KIND_PROXY && (str_contains($url, '/health') || str_contains($url, '/actuator'))) {
             $this->kind = 'health';
         }
 
@@ -109,6 +126,29 @@ new #[Title('Sitios')] class extends Component
 
         if ($this->editingId === null || $guessed === MonitorTarget::ORIGIN_INTERNAL) {
             $this->probe_origin = $guessed;
+        }
+    }
+
+    public function updatedKind(): void
+    {
+        if ($this->kind === MonitorTarget::KIND_PROXY) {
+            $this->proxy_target_id = null;
+            $this->availability_mode = 'reachable';
+
+            if ($this->editingId === null) {
+                $this->commandIds = MonitorCommand::query()
+                    ->enabled()
+                    ->where('is_custom', false)
+                    ->whereIn('slug', [
+                        'hostname', 'uptime', 'df', 'free',
+                        'nginx-active', 'nginx-status', 'nginx-logs', 'nginx-test', 'ss-http',
+                        'nginx-reload', 'nginx-restart',
+                        'haproxy-active', 'haproxy-status', 'haproxy-logs',
+                        'haproxy-reload', 'haproxy-restart',
+                    ])
+                    ->pluck('id')
+                    ->all();
+            }
         }
     }
 
@@ -132,12 +172,13 @@ new #[Title('Sitios')] class extends Component
     {
         $this->authorizeManage();
         $this->editingId = null;
-        $this->reset('name', 'url', 'expected_keyword', 'probe_origin', 'ssh_host', 'ssh_username', 'ssh_password', 'newCommandLabel', 'newCommandText', 'pendingCustomCommands');
+        $this->reset('name', 'url', 'expected_keyword', 'probe_origin', 'proxy_target_id', 'ssh_host', 'ssh_username', 'ssh_password', 'newCommandLabel', 'newCommandText', 'pendingCustomCommands');
         $this->method = 'GET';
         $this->timeout_seconds = 15;
         $this->interval_seconds = $this->defaultInterval();
         $this->verify_ssl = true;
         $this->kind = 'http';
+        $this->proxy_target_id = null;
         $this->probe_origin = MonitorTarget::ORIGIN_INTERNAL;
         $this->availability_mode = 'strict';
         $this->expected_status_input = implode(', ', MonitorTarget::defaultExpectedStatus());
@@ -170,6 +211,7 @@ new #[Title('Sitios')] class extends Component
         $this->interval_seconds = max(1, (int) $target->interval_seconds);
         $this->verify_ssl = $target->verify_ssl;
         $this->kind = $target->kind;
+        $this->proxy_target_id = $target->isProxy() ? null : $target->proxy_target_id;
         $this->probe_origin = $target->probeOrigin();
         $this->ssh_host = $target->server?->host ?? '';
         $this->ssh_port = $target->server?->port ?? 22;
@@ -231,6 +273,9 @@ new #[Title('Sitios')] class extends Component
     public function save(): void
     {
         $this->authorizeManage();
+        if (! $this->proxy_target_id) {
+            $this->proxy_target_id = null;
+        }
         $this->validate();
         $this->validate([
             'interval_seconds' => ['required', 'integer', Rule::in($this->intervalOptions)],
@@ -245,6 +290,12 @@ new #[Title('Sitios')] class extends Component
             ],
             'commandIds' => ['array'],
             'commandIds.*' => ['integer', 'exists:monitor_commands,id'],
+            'proxy_target_id' => [
+                'nullable',
+                'integer',
+                Rule::exists('monitor_targets', 'id')->where('kind', MonitorTarget::KIND_PROXY),
+                Rule::notIn([$this->editingId]),
+            ],
         ]);
 
         $attributes = [
@@ -252,6 +303,7 @@ new #[Title('Sitios')] class extends Component
             'url' => $this->url,
             'kind' => $this->kind,
             'probe_origin' => $this->probe_origin,
+            'proxy_target_id' => $this->kind === MonitorTarget::KIND_PROXY ? null : $this->proxy_target_id,
             'method' => $this->method,
             'expected_keyword' => $this->expected_keyword,
             'timeout_seconds' => $this->timeout_seconds,
@@ -268,7 +320,7 @@ new #[Title('Sitios')] class extends Component
         $this->syncServerAndCommands($target);
         $this->ssh_password = '';
         $this->showForm = false;
-        unset($this->sites);
+        unset($this->sites, $this->proxyOptions);
         $this->js('window.notify({ heading: "Sitio guardado", text: "Ya puedes lanzar un chequeo.", variant: "success" })');
     }
 
@@ -279,6 +331,10 @@ new #[Title('Sitios')] class extends Component
     {
         if ($this->kind === 'health') {
             return [200];
+        }
+
+        if ($this->kind === MonitorTarget::KIND_PROXY && $this->availability_mode === 'reachable') {
+            return [MonitorTarget::ANY_HTTP_STATUS];
         }
 
         if ($this->availability_mode === 'reachable') {
@@ -361,7 +417,7 @@ new #[Title('Sitios')] class extends Component
     {
         $this->authorizeManage();
         MonitorTarget::query()->whereKey($id)->delete();
-        unset($this->sites);
+        unset($this->sites, $this->proxyOptions);
         $this->js('window.notify({ heading: "Sitio eliminado", variant: "success" })');
     }
 
@@ -388,7 +444,7 @@ new #[Title('Sitios')] class extends Component
     <div class="flex items-end justify-between gap-3">
         <div>
             <flux:heading size="xl">Sitios web</flux:heading>
-            <flux:text class="mt-1">URLs HTTPS a sondear. Cada chequeo genera un JSON completo.</flux:text>
+            <flux:text class="mt-1">Portales, web services y proxies Linux. Un proxy vinculado dice si la falla es de la app o del front.</flux:text>
         </div>
         @if (auth()->user()?->isAdmin())
             <flux:button icon="plus" wire:click="create">Nuevo sitio</flux:button>
@@ -424,6 +480,11 @@ new #[Title('Sitios')] class extends Component
                                     </flux:badge>
                                     @if ($site->isHealth())
                                         <flux:badge size="sm" color="sky">WS</flux:badge>
+                                    @endif
+                                    @if ($site->isProxy())
+                                        <flux:badge size="sm" color="amber">Proxy</flux:badge>
+                                    @elseif ($site->proxy)
+                                        <flux:badge size="sm" color="amber">vía {{ $site->proxy->name }}</flux:badge>
                                     @endif
                                     @if ($site->hasSshAccess())
                                         <flux:badge size="sm" color="zinc">SSH</flux:badge>
@@ -473,13 +534,31 @@ new #[Title('Sitios')] class extends Component
 
     <flux:modal wire:model="showForm" class="md:w-2xl">
         <form wire:submit="save" class="space-y-4">
-            <flux:heading size="lg">{{ $editingId ? 'Editar sitio' : 'Nuevo sitio' }}</flux:heading>
+            <flux:heading size="lg">{{ $editingId ? 'Editar destino' : 'Nuevo destino' }}</flux:heading>
             <flux:input wire:model="name" label="Nombre" />
-            <flux:input wire:model.live="url" label="URL HTTPS" type="url" />
+            <flux:input
+                wire:model.live="url"
+                :label="$kind === 'proxy' ? 'URL de comprobación del proxy' : 'URL HTTPS'"
+                type="url"
+                :description="$kind === 'proxy' ? 'Puerto 80/443 del proxy, p. ej. http://172.24.28.1/ o https://proxy.intra.bcv.org.ve/' : null"
+            />
             <flux:select wire:model.live="kind" label="Tipo">
                 <flux:select.option value="http">Sitio web</flux:select.option>
                 <flux:select.option value="health">Web service (health JSON)</flux:select.option>
+                <flux:select.option value="proxy">Proxy Linux (Nginx / HAProxy)</flux:select.option>
             </flux:select>
+            @if ($kind !== 'proxy')
+                <flux:select
+                    wire:model="proxy_target_id"
+                    label="Proxy que lo contiene"
+                    description="Si esta app está detrás de un Nginx/HAProxy ya cargado, vincúlelo. Así el dashboard distingue falla de proxy vs falla de aplicación."
+                >
+                    <flux:select.option value="">Sin proxy vinculado</flux:select.option>
+                    @foreach ($this->proxyOptions as $proxy)
+                        <flux:select.option value="{{ $proxy->id }}">{{ $proxy->name }}</flux:select.option>
+                    @endforeach
+                </flux:select>
+            @endif
             <flux:select
                 wire:model="probe_origin"
                 label="Sondear desde"
@@ -493,7 +572,7 @@ new #[Title('Sitios')] class extends Component
                 <flux:select.option value="HEAD">HEAD</flux:select.option>
                 <flux:select.option value="POST">POST</flux:select.option>
             </flux:select>
-            @if ($kind === 'http')
+            @if (in_array($kind, ['http', 'proxy'], true))
                 <flux:select wire:model.live="availability_mode" label="Criterio de UP" description="Decide qué cuenta como UP: ¿la página bien (200) o solo que el servidor contestó?">
                     <flux:select.option value="strict">Solo códigos HTTP esperados</flux:select.option>
                     <flux:select.option value="reachable">El servidor responde (cualquier código HTTP)</flux:select.option>
@@ -519,7 +598,7 @@ new #[Title('Sitios')] class extends Component
             <div class="space-y-3 rounded-xl border border-zinc-200 p-4 dark:border-white/10">
                 <div>
                     <flux:heading size="sm">Servidor SSH</flux:heading>
-                    <flux:text size="sm">Aplica a sitios y web services. La clave se cifra y no se vuelve a mostrar.</flux:text>
+                    <flux:text size="sm">En un proxy Linux ponga el host Nginx/HAProxy. Desde ahí ejecuta consultas y reinicios para ver si falló el front o la app. La clave se cifra.</flux:text>
                 </div>
                 <div class="grid gap-3 sm:grid-cols-2">
                     <flux:input wire:model="ssh_host" label="Host SSH" placeholder="ocppws.extra.bcv.org.ve" />

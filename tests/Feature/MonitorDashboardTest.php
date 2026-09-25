@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\MonitorCheck;
 use App\Models\MonitorTarget;
 use App\Models\User;
+use App\Services\Monitoring\DashboardMetrics;
 use App\Services\Monitoring\FastApiProbe;
 use App\Services\Monitoring\HttpProbe;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -86,6 +87,9 @@ class MonitorDashboardTest extends TestCase
             ->assertSee('GET /health')
             ->assertSee('POST /v1/checks')
             ->assertSee('Regla de crisis')
+            ->assertSee('Proxy Linux')
+            ->assertSee('Falla del proxy')
+            ->assertSee('Falla de la aplicación')
             ->assertSee('Despliegue de la sonda exterior')
             ->assertSee('IP_PUBLICA_LARAVEL')
             ->assertSee('MONITOR_API_EXTERNAL_URL');
@@ -269,7 +273,7 @@ class MonitorDashboardTest extends TestCase
             $mock->shouldReceive('runtime')->andReturn($this->disabledRuntime());
         });
 
-        $metrics = app(\App\Services\Monitoring\DashboardMetrics::class)->all()['http'];
+        $metrics = app(DashboardMetrics::class)->all()['http'];
 
         $this->assertSame(['Portal Interior'], array_column($metrics['site_series_internal'], 'name'));
         $this->assertSame(['Portal Exterior'], array_column($metrics['site_series_external'], 'name'));
@@ -488,6 +492,36 @@ class MonitorDashboardTest extends TestCase
 
             $this->assertNull($user->fresh()->dashboard_table);
         }
+    }
+
+    #[Test]
+    public function dashboard_explains_app_failure_when_the_linked_proxy_is_up(): void
+    {
+        $proxy = MonitorTarget::factory()->proxy()->create([
+            'name' => 'Nginx Entrega',
+            'last_ok' => true,
+            'last_status_code' => 200,
+        ]);
+        MonitorTarget::factory()->create([
+            'name' => 'Portal Entrega',
+            'proxy_target_id' => $proxy->id,
+            'last_ok' => false,
+            'last_status_code' => 502,
+        ]);
+
+        $this->mock(FastApiProbe::class, function ($mock): void {
+            $mock->shouldReceive('enabled')->andReturn(false);
+            $mock->shouldReceive('engineLabel')->andReturn('php-curl');
+            $mock->shouldReceive('runtime')->andReturn($this->disabledRuntime());
+        });
+
+        $this->actingAs(User::factory()->create())
+            ->get(route('dashboard'))
+            ->assertOk()
+            ->assertSee('Nginx Entrega')
+            ->assertSee('Portal Entrega')
+            ->assertSee('vía Nginx Entrega')
+            ->assertSee('Falla de la aplicación');
     }
 
     /**

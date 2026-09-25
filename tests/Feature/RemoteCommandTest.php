@@ -107,6 +107,35 @@ class RemoteCommandTest extends TestCase
     }
 
     #[Test]
+    public function command_output_can_be_cleared_and_returns_after_the_next_run(): void
+    {
+        $user = User::factory()->create();
+        $target = MonitorTarget::factory()->create(['name' => 'Portal BCV']);
+        $command = $this->attachSsh($target, ['hostname']);
+
+        $this->mock(SshClient::class, function ($mock): void {
+            $mock->shouldReceive('exec')
+                ->twice()
+                ->andReturn(
+                    new SshExecResult(0, "primera-salida\n", '', 'fingerprint-1'),
+                    new SshExecResult(0, "segunda-salida\n", '', 'fingerprint-1'),
+                );
+        });
+
+        Livewire::actingAs($user)
+            ->test('pages::monitor.site', ['target' => $target])
+            ->set('selectedCommandId', (string) $command->id)
+            ->call('execute')
+            ->assertSee('primera-salida')
+            ->call('clearCommandOutput')
+            ->assertDontSee('primera-salida')
+            ->assertSee('Salida limpia')
+            ->call('execute')
+            ->assertSee('segunda-salida')
+            ->assertDontSee('primera-salida');
+    }
+
+    #[Test]
     public function change_command_requires_the_exact_site_name(): void
     {
         $user = User::factory()->create();
