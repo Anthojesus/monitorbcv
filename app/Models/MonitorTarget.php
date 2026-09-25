@@ -34,6 +34,7 @@ use Illuminate\Support\Collection;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read Collection<int, MonitorCheck> $checks
+ * @property-read MonitorCheck|null $latestCheck
  * @property-read Collection<int, MonitorCommand> $commands
  * @property-read Collection<int, MonitorCommandRun> $commandRuns
  * @property-read MonitorTargetServer|null $server
@@ -95,6 +96,14 @@ class MonitorTarget extends Model
     public function checks(): HasMany
     {
         return $this->hasMany(MonitorCheck::class);
+    }
+
+    /**
+     * @return HasOne<MonitorCheck, $this>
+     */
+    public function latestCheck(): HasOne
+    {
+        return $this->hasOne(MonitorCheck::class)->latestOfMany('checked_at');
     }
 
     /**

@@ -210,16 +210,18 @@ class SiteLineChart
         }
 
         $since ??= now()->subDay();
-        $ids = $targets->pluck('id');
-        $limit = min(400, max(40, $ids->count() * 60));
 
-        return MonitorCheck::query()
-            ->whereIn('monitor_target_id', $ids)
-            ->where('checked_at', '>=', $since)
-            ->latest('checked_at')
-            ->limit($limit)
-            ->get(['id', 'monitor_target_id', 'ok', 'total_ms', 'payload', 'checked_at', 'availability_reason'])
-            ->groupBy('monitor_target_id');
+        return $targets
+            ->mapWithKeys(function (MonitorTarget $target) use ($since): array {
+                $checks = MonitorCheck::query()
+                    ->where('monitor_target_id', $target->id)
+                    ->where('checked_at', '>=', $since)
+                    ->latest('checked_at')
+                    ->limit(60)
+                    ->get(['id', 'monitor_target_id', 'ok', 'total_ms', 'payload', 'checked_at', 'availability_reason']);
+
+                return [$target->id => $checks];
+            });
     }
 
     /**

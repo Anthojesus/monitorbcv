@@ -88,13 +88,12 @@ new #[Title('Sitios')] class extends Component
     public function sites(): Collection
     {
         return MonitorTarget::query()
-            ->with([
-                'server',
-                'proxy',
-                'checks' => fn ($query) => $query->latest('checked_at')->limit(8),
-            ])
+            ->with(['server', 'proxy', 'latestCheck'])
             ->orderBy('name')
-            ->get();
+            ->get()
+            ->each(function (MonitorTarget $site): void {
+                $site->setRelation('checks', collect($site->latestCheck ? [$site->latestCheck] : []));
+            });
     }
 
     /**

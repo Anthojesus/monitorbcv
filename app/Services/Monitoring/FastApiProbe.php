@@ -265,6 +265,13 @@ class FastApiProbe
             return ['engine' => 'php-curl', 'api' => $api, 'python' => $python];
         }
 
+        if (PHP_SAPI !== 'cli' && PHP_SAPI !== 'phpdbg') {
+            $api['hint'] = 'La web no espera /health. El cron actualiza este semáforo.';
+            $python['hint'] = 'Sondeo en segundo plano.';
+
+            return ['engine' => 'php-curl', 'api' => $api, 'python' => $python];
+        }
+
         try {
             $healthTimeout = max(2.0, (float) ($config['health_timeout'] ?? 8));
             $response = $this->healthClient($config, $healthTimeout)->get($config['url'].'/health');
