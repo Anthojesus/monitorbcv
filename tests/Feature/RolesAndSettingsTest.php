@@ -85,6 +85,7 @@ class RolesAndSettingsTest extends TestCase
         Livewire::actingAs($admin)
             ->test('pages::monitor.sites')
             ->call('create')
+            ->set('kind', 'http')
             ->set('name', 'Portal 10s')
             ->set('url', 'https://diez.example.com')
             ->set('ssh_host', '')

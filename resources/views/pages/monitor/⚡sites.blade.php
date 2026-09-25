@@ -40,7 +40,7 @@ new #[Title('Sitios')] class extends Component
     public bool $verify_ssl = true;
 
     #[Validate('required|in:http,health,proxy')]
-    public string $kind = 'http';
+    public string $kind = '';
 
     #[Validate('nullable|integer')]
     public ?int $proxy_target_id = null;
@@ -129,27 +129,75 @@ new #[Title('Sitios')] class extends Component
         }
     }
 
+    /**
+     * @return list<string>
+     */
+    public static function proxyCommandSlugs(): array
+    {
+        return [
+            'hostname', 'uptime', 'df', 'free',
+            'nginx-active', 'nginx-status', 'nginx-logs', 'nginx-test', 'ss-http',
+            'nginx-reload', 'nginx-restart',
+            'haproxy-active', 'haproxy-status', 'haproxy-logs',
+            'haproxy-reload', 'haproxy-restart',
+        ];
+    }
+
+    /**
+     * @return Collection<int, MonitorCommand>
+     */
+    #[Computed]
+    public function formCommands(): Collection
+    {
+        $catalog = RemoteCommandRunner::catalog($this->editingId);
+
+        if ($this->kind !== MonitorTarget::KIND_PROXY) {
+            return $catalog;
+        }
+
+        return $catalog
+            ->filter(fn (MonitorCommand $command): bool => $command->isCustom() || in_array($command->slug, self::proxyCommandSlugs(), true))
+            ->values();
+    }
+
     public function updatedKind(): void
     {
         if ($this->kind === MonitorTarget::KIND_PROXY) {
             $this->proxy_target_id = null;
             $this->availability_mode = 'reachable';
+            $this->method = 'GET';
+            $this->expected_keyword = null;
 
             if ($this->editingId === null) {
                 $this->commandIds = MonitorCommand::query()
                     ->enabled()
                     ->where('is_custom', false)
-                    ->whereIn('slug', [
-                        'hostname', 'uptime', 'df', 'free',
-                        'nginx-active', 'nginx-status', 'nginx-logs', 'nginx-test', 'ss-http',
-                        'nginx-reload', 'nginx-restart',
-                        'haproxy-active', 'haproxy-status', 'haproxy-logs',
-                        'haproxy-reload', 'haproxy-restart',
-                    ])
+                    ->whereIn('slug', self::proxyCommandSlugs())
                     ->pluck('id')
                     ->all();
             }
+
+            unset($this->formCommands);
+
+            return;
         }
+
+        if ($this->kind === 'health' || $this->editingId === null) {
+            $this->availability_mode = 'strict';
+        }
+
+        $this->method = 'GET';
+
+        if ($this->editingId === null) {
+            $this->commandIds = MonitorCommand::query()
+                ->enabled()
+                ->where('is_custom', false)
+                ->where('kind', 'query')
+                ->pluck('id')
+                ->all();
+        }
+
+        unset($this->formCommands);
     }
 
     /**
@@ -177,7 +225,7 @@ new #[Title('Sitios')] class extends Component
         $this->timeout_seconds = 15;
         $this->interval_seconds = $this->defaultInterval();
         $this->verify_ssl = true;
-        $this->kind = 'http';
+        $this->kind = '';
         $this->proxy_target_id = null;
         $this->probe_origin = MonitorTarget::ORIGIN_INTERNAL;
         $this->availability_mode = 'strict';
@@ -192,6 +240,7 @@ new #[Title('Sitios')] class extends Component
             ->pluck('id')
             ->all();
         $this->showForm = true;
+        unset($this->formCommands, $this->proxyOptions);
     }
 
     public function edit(int $id): void
@@ -224,6 +273,7 @@ new #[Title('Sitios')] class extends Component
         $this->newCommandText = '';
         $this->newCommandKind = 'query';
         $this->showForm = true;
+        unset($this->formCommands, $this->proxyOptions);
     }
 
     public function addCustomCommandToForm(): void
@@ -535,164 +585,208 @@ new #[Title('Sitios')] class extends Component
     <flux:modal wire:model="showForm" class="md:w-2xl">
         <form wire:submit="save" class="space-y-4">
             <flux:heading size="lg">{{ $editingId ? 'Editar destino' : 'Nuevo destino' }}</flux:heading>
-            <flux:input wire:model="name" label="Nombre" />
-            <flux:input
-                wire:model.live="url"
-                :label="$kind === 'proxy' ? 'URL de comprobación del proxy' : 'URL HTTPS'"
-                type="url"
-                :description="$kind === 'proxy' ? 'Puerto 80/443 del proxy, p. ej. http://172.24.28.1/ o https://proxy.intra.bcv.org.ve/' : null"
-            />
-            <flux:select wire:model.live="kind" label="Tipo">
-                <flux:select.option value="http">Sitio web</flux:select.option>
-                <flux:select.option value="health">Web service (health JSON)</flux:select.option>
-                <flux:select.option value="proxy">Proxy Linux (Nginx / HAProxy)</flux:select.option>
-            </flux:select>
-            @if ($kind !== 'proxy')
+            <flux:text size="sm">Primero elija el tipo. El formulario muestra solo lo que ese destino necesita.</flux:text>
+
+            <fieldset class="space-y-2">
+                <legend class="text-sm font-medium text-zinc-800 dark:text-zinc-100">¿Qué va a monitorear?</legend>
+                @foreach ([
+                    ['proxy', 'Proxy Linux', 'Nginx o HAProxy. Sondeo del front y comandos SSH para validar 80/443.'],
+                    ['http', 'Sitio web', 'Portal o página. Puede vincularse al proxy que la contiene.'],
+                    ['health', 'Web service', 'JSON de salud (/health o /actuator) y sus dependencias.'],
+                ] as [$value, $title, $hint])
+                    <label @class([
+                        'flex cursor-pointer items-start gap-3 rounded-xl border px-3 py-2.5 transition',
+                        'border-amber-500 bg-amber-500/10 dark:border-amber-400/70' => $kind === $value && $value === 'proxy',
+                        'border-sky-500 bg-sky-500/10 dark:border-sky-400/70' => $kind === $value && $value === 'health',
+                        'border-zinc-900 bg-zinc-900/5 dark:border-white/60 dark:bg-white/10' => $kind === $value && $value === 'http',
+                        'border-zinc-200 hover:border-zinc-400 dark:border-white/10 dark:hover:border-white/25' => $kind !== $value,
+                    ])>
+                        <input type="radio" wire:model.live="kind" value="{{ $value }}" class="mt-1">
+                        <span>
+                            <span class="block font-medium text-zinc-900 dark:text-zinc-100">{{ $title }}</span>
+                            <span class="block text-[12px] leading-4 text-zinc-500 dark:text-zinc-400">{{ $hint }}</span>
+                        </span>
+                    </label>
+                @endforeach
+            </fieldset>
+
+            @if ($kind === '')
+                <div class="flex justify-end">
+                    <flux:button type="button" variant="ghost" wire:click="$set('showForm', false)">Cancelar</flux:button>
+                </div>
+            @else
+                <flux:input wire:model="name" label="Nombre" />
+                <flux:input
+                    wire:model.live="url"
+                    :label="$kind === 'proxy' ? 'URL del proxy (80/443)' : ($kind === 'health' ? 'URL del health' : 'URL HTTPS')"
+                    type="url"
+                    :description="$kind === 'proxy' ? 'Ej. http://172.24.28.1/ o https://proxy.intra.bcv.org.ve/' : ($kind === 'health' ? 'Ruta /health o /actuator del servicio.' : null)"
+                />
+
+                @if ($kind !== 'proxy')
+                    <flux:select
+                        wire:model="proxy_target_id"
+                        label="Proxy que lo contiene"
+                        description="Opcional. Si esta app está detrás de un Nginx/HAProxy ya cargado, el dashboard separa falla de proxy vs falla de aplicación."
+                    >
+                        <flux:select.option value="">Sin proxy vinculado</flux:select.option>
+                        @foreach ($this->proxyOptions as $proxy)
+                            <flux:select.option value="{{ $proxy->id }}">{{ $proxy->name }}</flux:select.option>
+                        @endforeach
+                    </flux:select>
+                @endif
+
                 <flux:select
-                    wire:model="proxy_target_id"
-                    label="Proxy que lo contiene"
-                    description="Si esta app está detrás de un Nginx/HAProxy ya cargado, vincúlelo. Así el dashboard distingue falla de proxy vs falla de aplicación."
+                    wire:model="probe_origin"
+                    label="Sondear desde"
+                    :description="$kind === 'proxy' ? 'Casi siempre Interior: el proxy vive en la red BCV.' : 'intra / extra / 172.x = Interior. Portal público = Exterior. Si importa en ambos mundos, cree dos destinos.'"
                 >
-                    <flux:select.option value="">Sin proxy vinculado</flux:select.option>
-                    @foreach ($this->proxyOptions as $proxy)
-                        <flux:select.option value="{{ $proxy->id }}">{{ $proxy->name }}</flux:select.option>
+                    <flux:select.option value="internal">Interior (red BCV / esta máquina)</flux:select.option>
+                    <flux:select.option value="external">Exterior (Internet público / VPS)</flux:select.option>
+                </flux:select>
+
+                @if ($kind === 'http')
+                    <flux:select wire:model="method" label="Método">
+                        <flux:select.option value="GET">GET</flux:select.option>
+                        <flux:select.option value="HEAD">HEAD</flux:select.option>
+                        <flux:select.option value="POST">POST</flux:select.option>
+                    </flux:select>
+                    <flux:select wire:model.live="availability_mode" label="Criterio de UP" description="¿La página bien (200) o solo que el servidor contestó?">
+                        <flux:select.option value="strict">Solo códigos HTTP esperados</flux:select.option>
+                        <flux:select.option value="reachable">El servidor responde (cualquier código HTTP)</flux:select.option>
+                    </flux:select>
+                    @if ($availability_mode === 'reachable')
+                        <flux:callout icon="information-circle">
+                            UP 500 significa que el host contestó, no que la página funcione. Un 5xx es fallo de la aplicación. Use «Solo códigos HTTP esperados» si un error de servidor debe marcar DOWN.
+                        </flux:callout>
+                    @endif
+                    @if ($availability_mode === 'strict')
+                        <flux:input wire:model="expected_status_input" label="Códigos HTTP aceptados" description="Separados por coma. Ejemplo: 200, 301, 302, 403" />
+                    @endif
+                    <flux:input wire:model="expected_keyword" label="Palabra clave (opcional)" />
+                @endif
+
+                <flux:select wire:model="interval_seconds" label="Intervalo" description="Cada cuántos segundos se sondea.">
+                    @foreach ($this->intervalOptions as $seconds)
+                        <flux:select.option value="{{ $seconds }}">{{ $seconds }} segundos</flux:select.option>
                     @endforeach
                 </flux:select>
-            @endif
-            <flux:select
-                wire:model="probe_origin"
-                label="Sondear desde"
-                description="intra / extra / 172.x / red BCV = Interior. Portal público del ciudadano = Exterior. Un destino, un origen: si importa en ambos mundos, crea dos destinos."
-            >
-                <flux:select.option value="internal">Interior (red BCV / esta máquina)</flux:select.option>
-                <flux:select.option value="external">Exterior (Internet público / VPS)</flux:select.option>
-            </flux:select>
-            <flux:select wire:model="method" label="Método">
-                <flux:select.option value="GET">GET</flux:select.option>
-                <flux:select.option value="HEAD">HEAD</flux:select.option>
-                <flux:select.option value="POST">POST</flux:select.option>
-            </flux:select>
-            @if (in_array($kind, ['http', 'proxy'], true))
-                <flux:select wire:model.live="availability_mode" label="Criterio de UP" description="Decide qué cuenta como UP: ¿la página bien (200) o solo que el servidor contestó?">
-                    <flux:select.option value="strict">Solo códigos HTTP esperados</flux:select.option>
-                    <flux:select.option value="reachable">El servidor responde (cualquier código HTTP)</flux:select.option>
-                </flux:select>
-                @if ($availability_mode === 'reachable')
-                    <flux:callout icon="information-circle">
-                        Con este criterio, UP 500 significa que el host contestó, no que la página funcione. Un 5xx es fallo de la aplicación, no un corte de red. Elige «Solo códigos HTTP esperados» si un error de servidor debe marcar DOWN.
-                    </flux:callout>
+
+                @if ($kind !== 'proxy')
+                    <flux:input wire:model="timeout_seconds" label="Timeout (s)" type="number" />
+                    <flux:checkbox wire:model="verify_ssl" label="Verificar certificado SSL" description="Si solo falla la CA interna, el sistema reintenta y no marca DOWN." />
                 @endif
-                @if ($availability_mode === 'strict')
-                    <flux:input wire:model="expected_status_input" label="Códigos HTTP aceptados" description="Separados por coma. Ejemplo: 200, 301, 302, 403" />
-                @endif
-                <flux:input wire:model="expected_keyword" label="Palabra clave (opcional)" />
-            @endif
-            <flux:select wire:model="interval_seconds" label="Intervalo de monitoreo" description="Cada cuántos segundos se sondea este destino.">
-                @foreach ($this->intervalOptions as $seconds)
-                    <flux:select.option value="{{ $seconds }}">{{ $seconds }} segundos</flux:select.option>
-                @endforeach
-            </flux:select>
-            <flux:input wire:model="timeout_seconds" label="Timeout (s)" type="number" />
-            <flux:checkbox wire:model="verify_ssl" label="Verificar certificado SSL" description="Si solo falla la CA interna, el sistema reintenta y no marca DOWN." />
 
-            <div class="space-y-3 rounded-xl border border-zinc-200 p-4 dark:border-white/10">
-                <div>
-                    <flux:heading size="sm">Servidor SSH</flux:heading>
-                    <flux:text size="sm">En un proxy Linux ponga el host Nginx/HAProxy. Desde ahí ejecuta consultas y reinicios para ver si falló el front o la app. La clave se cifra.</flux:text>
-                </div>
-                <div class="grid gap-3 sm:grid-cols-2">
-                    <flux:input wire:model="ssh_host" label="Host SSH" placeholder="ocppws.extra.bcv.org.ve" />
-                    <flux:input wire:model="ssh_port" label="Puerto" type="number" />
-                    <flux:input wire:model="ssh_username" label="Usuario" autocomplete="off" />
-                    <flux:input
-                        wire:model="ssh_password"
-                        label="{{ $hasStoredPassword ? 'Nueva clave (opcional)' : 'Clave' }}"
-                        type="password"
-                        autocomplete="new-password"
-                        :placeholder="$hasStoredPassword ? 'Clave cifrada guardada' : ''"
-                    />
-                </div>
-            </div>
-
-            <div class="space-y-3 rounded-xl border border-zinc-200 p-4 dark:border-white/10">
-                <div>
-                    <flux:heading size="sm">Comandos de este destino</flux:heading>
-                    <flux:text size="sm">Marque los precargados o agregue un alias que solo conocen los administradores del servidor.</flux:text>
-                </div>
-                @php $catalog = RemoteCommandRunner::catalog($editingId); @endphp
-                <div class="grid gap-4 sm:grid-cols-2">
-                    <div class="space-y-2">
-                        <flux:text class="font-medium">Consulta</flux:text>
-                        @foreach ($catalog->where('kind', 'query') as $command)
-                            <label class="flex items-start gap-2 text-sm">
-                                <input type="checkbox" wire:model="commandIds" value="{{ $command->id }}" class="mt-1 rounded border-zinc-300 dark:border-white/20">
-                                <span>
-                                    <span class="font-medium">{{ $command->label }}</span>
-                                    @if ($command->isCustom())
-                                        <flux:badge size="sm" color="sky">Alias</flux:badge>
-                                    @endif
-                                    <span class="block font-mono text-[11px] text-zinc-500">{{ $command->command }}</span>
-                                </span>
-                            </label>
-                        @endforeach
-                    </div>
-                    <div class="space-y-2">
-                        <flux:text class="font-medium">Cambio</flux:text>
-                        @foreach ($catalog->where('kind', 'change') as $command)
-                            <label class="flex items-start gap-2 text-sm">
-                                <input type="checkbox" wire:model="commandIds" value="{{ $command->id }}" class="mt-1 rounded border-zinc-300 dark:border-white/20">
-                                <span>
-                                    <span class="font-medium">{{ $command->label }}</span>
-                                    @if ($command->isCustom())
-                                        <flux:badge size="sm" color="sky">Alias</flux:badge>
-                                    @endif
-                                    <span class="block font-mono text-[11px] text-zinc-500">{{ $command->command }}</span>
-                                </span>
-                            </label>
-                        @endforeach
-                    </div>
-                </div>
-
-                <div class="space-y-3 rounded-lg bg-zinc-50 p-3 dark:bg-white/5">
+                <div class="space-y-3 rounded-xl border border-zinc-200 p-4 dark:border-white/10">
                     <div>
-                        <flux:text class="font-medium">Agregar comando o alias</flux:text>
-                        <flux:text size="sm">Ejemplo: nombre “Estado OCPP” y comando <span class="font-mono">ocpp-status</span>.</flux:text>
+                        <flux:heading size="sm">Servidor SSH</flux:heading>
+                        <flux:text size="sm">
+                            @if ($kind === 'proxy')
+                                Host del Nginx/HAProxy. Desde aquí se valida si falló el front (nginx -t, puertos 80/443, recargar). La clave se cifra.
+                            @else
+                                Opcional. Si lo llena, podrá ejecutar comandos en el servidor de esta app. La clave se cifra.
+                            @endif
+                        </flux:text>
                     </div>
                     <div class="grid gap-3 sm:grid-cols-2">
-                        <flux:input wire:model="newCommandLabel" label="Nombre en la lista" placeholder="Estado OCPP" />
-                        <flux:input wire:model="newCommandText" label="Comando o alias" placeholder="ocpp-status" class="font-mono" />
+                        <flux:input wire:model="ssh_host" label="Host SSH" placeholder="{{ $kind === 'proxy' ? 'proxy.intra.bcv.org.ve' : 'ocppws.extra.bcv.org.ve' }}" />
+                        <flux:input wire:model="ssh_port" label="Puerto" type="number" />
+                        <flux:input wire:model="ssh_username" label="Usuario" autocomplete="off" />
+                        <flux:input
+                            wire:model="ssh_password"
+                            label="{{ $hasStoredPassword ? 'Nueva clave (opcional)' : 'Clave' }}"
+                            type="password"
+                            autocomplete="new-password"
+                            :placeholder="$hasStoredPassword ? 'Clave cifrada guardada' : ''"
+                        />
                     </div>
-                    <div class="flex flex-wrap items-end gap-3">
-                        <flux:select wire:model="newCommandKind" label="Tipo" class="min-w-40">
-                            <flux:select.option value="query">Consulta (solo mira)</flux:select.option>
-                            <flux:select.option value="change">Cambio (reinicia o modifica)</flux:select.option>
-                        </flux:select>
-                        <flux:button type="button" icon="plus" wire:click="addCustomCommandToForm">Agregar a la lista</flux:button>
+                </div>
+
+                <div class="space-y-3 rounded-xl border border-zinc-200 p-4 dark:border-white/10">
+                    <div>
+                        <flux:heading size="sm">{{ $kind === 'proxy' ? 'Comandos del proxy' : 'Comandos de este destino' }}</flux:heading>
+                        <flux:text size="sm">
+                            @if ($kind === 'proxy')
+                                Ya vienen marcados Nginx, HAProxy y chequeos de host. Desmarque lo que no use.
+                            @else
+                                Marque los precargados o agregue un alias que solo conocen los administradores del servidor.
+                            @endif
+                        </flux:text>
                     </div>
-                    @if ($pendingCustomCommands !== [])
+                    <div class="grid gap-4 sm:grid-cols-2">
                         <div class="space-y-2">
-                            <flux:text size="sm">Se guardarán con el sitio:</flux:text>
-                            @foreach ($pendingCustomCommands as $index => $draft)
-                                <div class="flex items-center justify-between gap-2 rounded-md border border-zinc-200 px-3 py-2 text-sm dark:border-white/10">
+                            <flux:text class="font-medium">Consulta</flux:text>
+                            @foreach ($this->formCommands->where('kind', 'query') as $command)
+                                <label class="flex items-start gap-2 text-sm">
+                                    <input type="checkbox" wire:model="commandIds" value="{{ $command->id }}" class="mt-1 rounded border-zinc-300 dark:border-white/20">
                                     <span>
-                                        <span class="font-medium">{{ $draft['label'] }}</span>
-                                        <span class="font-mono text-zinc-500"> · {{ $draft['command'] }}</span>
-                                        <flux:badge size="sm" :color="$draft['kind'] === 'change' ? 'amber' : 'zinc'">
-                                            {{ $draft['kind'] === 'change' ? 'Cambio' : 'Consulta' }}
-                                        </flux:badge>
+                                        <span class="font-medium">{{ $command->label }}</span>
+                                        @if ($command->isCustom())
+                                            <flux:badge size="sm" color="sky">Alias</flux:badge>
+                                        @endif
+                                        <span class="block font-mono text-[11px] text-zinc-500">{{ $command->command }}</span>
                                     </span>
-                                    <flux:button size="sm" variant="ghost" type="button" wire:click="removePendingCustomCommand({{ $index }})">Quitar</flux:button>
-                                </div>
+                                </label>
                             @endforeach
                         </div>
-                    @endif
-                </div>
-            </div>
+                        <div class="space-y-2">
+                            <flux:text class="font-medium">Cambio</flux:text>
+                            @foreach ($this->formCommands->where('kind', 'change') as $command)
+                                <label class="flex items-start gap-2 text-sm">
+                                    <input type="checkbox" wire:model="commandIds" value="{{ $command->id }}" class="mt-1 rounded border-zinc-300 dark:border-white/20">
+                                    <span>
+                                        <span class="font-medium">{{ $command->label }}</span>
+                                        @if ($command->isCustom())
+                                            <flux:badge size="sm" color="sky">Alias</flux:badge>
+                                        @endif
+                                        <span class="block font-mono text-[11px] text-zinc-500">{{ $command->command }}</span>
+                                    </span>
+                                </label>
+                            @endforeach
+                        </div>
+                    </div>
 
-            <div class="flex justify-end gap-2">
-                <flux:button type="button" variant="ghost" wire:click="$set('showForm', false)">Cancelar</flux:button>
-                <flux:button type="submit" variant="primary">Guardar</flux:button>
-            </div>
+                    <div class="space-y-3 rounded-lg bg-zinc-50 p-3 dark:bg-white/5">
+                        <div>
+                            <flux:text class="font-medium">Agregar comando o alias</flux:text>
+                            <flux:text size="sm">Ejemplo: nombre “Estado OCPP” y comando <span class="font-mono">ocpp-status</span>.</flux:text>
+                        </div>
+                        <div class="grid gap-3 sm:grid-cols-2">
+                            <flux:input wire:model="newCommandLabel" label="Nombre en la lista" placeholder="Estado OCPP" />
+                            <flux:input wire:model="newCommandText" label="Comando o alias" placeholder="ocpp-status" class="font-mono" />
+                        </div>
+                        <div class="flex flex-wrap items-end gap-3">
+                            <flux:select wire:model="newCommandKind" label="Tipo de comando" class="min-w-40">
+                                <flux:select.option value="query">Consulta (solo mira)</flux:select.option>
+                                <flux:select.option value="change">Cambio (reinicia o modifica)</flux:select.option>
+                            </flux:select>
+                            <flux:button type="button" icon="plus" wire:click="addCustomCommandToForm">Agregar a la lista</flux:button>
+                        </div>
+                        @if ($pendingCustomCommands !== [])
+                            <div class="space-y-2">
+                                <flux:text size="sm">Se guardarán con el sitio:</flux:text>
+                                @foreach ($pendingCustomCommands as $index => $draft)
+                                    <div class="flex items-center justify-between gap-2 rounded-md border border-zinc-200 px-3 py-2 text-sm dark:border-white/10">
+                                        <span>
+                                            <span class="font-medium">{{ $draft['label'] }}</span>
+                                            <span class="font-mono text-zinc-500"> · {{ $draft['command'] }}</span>
+                                            <flux:badge size="sm" :color="$draft['kind'] === 'change' ? 'amber' : 'zinc'">
+                                                {{ $draft['kind'] === 'change' ? 'Cambio' : 'Consulta' }}
+                                            </flux:badge>
+                                        </span>
+                                        <flux:button size="sm" variant="ghost" type="button" wire:click="removePendingCustomCommand({{ $index }})">Quitar</flux:button>
+                                    </div>
+                                @endforeach
+                            </div>
+                        @endif
+                    </div>
+                </div>
+
+                <div class="flex justify-end gap-2">
+                    <flux:button type="button" variant="ghost" wire:click="$set('showForm', false)">Cancelar</flux:button>
+                    <flux:button type="submit" variant="primary">Guardar</flux:button>
+                </div>
+            @endif
         </form>
     </flux:modal>
 </section>

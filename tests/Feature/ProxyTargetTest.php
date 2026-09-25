@@ -22,6 +22,40 @@ class ProxyTargetTest extends TestCase
     use RefreshDatabase;
 
     #[Test]
+    public function create_form_asks_for_type_before_showing_fields(): void
+    {
+        $admin = User::factory()->admin()->create();
+
+        Livewire::actingAs($admin)
+            ->test('pages::monitor.sites')
+            ->call('create')
+            ->assertSee('¿Qué va a monitorear?')
+            ->assertSee('Proxy Linux')
+            ->assertSee('Sitio web')
+            ->assertSee('Web service')
+            ->assertDontSee('URL del proxy (80/443)')
+            ->assertDontSee('Criterio de UP')
+            ->set('kind', 'proxy')
+            ->assertSee('URL del proxy (80/443)')
+            ->assertSee('Servidor SSH')
+            ->assertSee('Comandos del proxy')
+            ->assertDontSee('Criterio de UP')
+            ->assertDontSee('Método')
+            ->assertDontSee('Palabra clave (opcional)')
+            ->assertDontSee('Timeout (s)')
+            ->set('kind', 'http')
+            ->assertSee('URL HTTPS')
+            ->assertSee('Criterio de UP')
+            ->assertSee('Método')
+            ->assertSee('Proxy que lo contiene')
+            ->set('kind', 'health')
+            ->assertSee('URL del health')
+            ->assertSee('Proxy que lo contiene')
+            ->assertDontSee('Criterio de UP')
+            ->assertDontSee('Método');
+    }
+
+    #[Test]
     public function admin_can_create_a_linux_proxy_and_link_a_site(): void
     {
         $admin = User::factory()->admin()->create();

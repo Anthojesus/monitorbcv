@@ -293,6 +293,7 @@ class RemoteCommandTest extends TestCase
         Livewire::actingAs($user)
             ->test('pages::monitor.sites')
             ->call('create')
+            ->set('kind', 'http')
             ->set('name', 'Portal Alias')
             ->set('url', 'https://portal.example.test')
             ->set('ssh_host', '')
