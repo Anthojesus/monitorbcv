@@ -6,12 +6,26 @@ use App\Models\MonitorCheck;
 use App\Models\MonitorTarget;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Throwable;
 
 class FastApiProbe
 {
+    /**
+     * La lectura sobrevive un cron de un minuto y un monitor:run largo.
+     * Un TTL corto hacía que el dashboard pintara DOWN al expirar la clave.
+     */
+    private const RUNTIME_TTL_SECONDS = 86400;
+
+    /**
+     * Por debajo de esto, un cron cada minuto vuelve a marcar las sondas caídas entre corridas.
+     */
+    private const RUNTIME_STALE_FLOOR_SECONDS = 180;
+
+    private const FAILURE_CONFIRMATIONS = 2;
+
     /**
      * @var array<string, array<string, mixed>>
      */
@@ -68,11 +82,18 @@ class FastApiProbe
             return $this->runtime();
         }
 
-        $detected = $this->detectRuntime($origin);
-        Cache::put($this->runtimeCacheKey($origin), $detected, max(5, (int) config('monitor.runtime_cache_seconds', 20)));
-        $this->runtimeCache[$origin] = $detected;
+        if (! $this->checksHealthFromThisProcess()) {
+            return $this->runtime($origin);
+        }
 
-        return $detected;
+        $stored = $this->stabilize(
+            $this->detectRuntime($origin),
+            $this->storedRuntime($origin),
+        );
+        Cache::put($this->runtimeCacheKey($origin), $stored, $this->runtimeTtl());
+        unset($this->runtimeCache[$origin]);
+
+        return $this->runtime($origin);
     }
 
     /**
@@ -190,25 +211,14 @@ class FastApiProbe
     }
 
     /**
-     * @return array{
-     *     engine: string,
-     *     api: array{ok: bool, label: string, hint: string},
-     *     python: array{ok: bool, label: string, hint: string}
-     * }
-     */
-    /**
-     * @return array{
-     *     engine: string,
-     *     api: array{ok: bool, label: string, hint: string},
-     *     python: array{ok: bool, label: string, hint: string}
-     * }
+     * @return array<string, mixed>
      */
     private function cachedRuntime(string $origin): array
     {
-        $cached = Cache::get($this->runtimeCacheKey($origin));
+        $cached = $this->storedRuntime($origin);
 
-        if (is_array($cached) && isset($cached['api'], $cached['python'], $cached['engine'])) {
-            return $cached;
+        if ($cached !== null) {
+            return $this->present($origin, $cached);
         }
 
         $config = $this->configFor($origin);
@@ -217,21 +227,206 @@ class FastApiProbe
             return $this->detectRuntime($origin);
         }
 
-        $label = $origin === MonitorTarget::ORIGIN_EXTERNAL ? 'Exterior' : 'Interior';
+        return $this->pendingRuntime($origin);
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function storedRuntime(string $origin): ?array
+    {
+        $cached = Cache::get($this->runtimeCacheKey($origin));
+
+        if (! is_array($cached) || ! isset($cached['api'], $cached['python'], $cached['engine'])) {
+            return null;
+        }
+
+        return $cached;
+    }
+
+    /**
+     * Una falla aislada no pisa un OK reciente. La caída se publica al confirmarse.
+     *
+     * @param  array<string, mixed>  $detected
+     * @param  array<string, mixed>|null  $previous
+     * @return array<string, mixed>
+     */
+    private function stabilize(array $detected, ?array $previous): array
+    {
+        $confirmations = $this->failureConfirmations();
+        $detected['pending'] = false;
+        $detected['stale'] = false;
+        $detected['checked_at'] = now()->toIso8601String();
+        $detected['api']['pending'] = false;
+        $detected['python']['pending'] = false;
+
+        $previousFresh = is_array($previous) && $this->sampleIsFresh($previous);
+
+        foreach (['api', 'python'] as $part) {
+            $streakKey = $part.'_failure_streak';
+            $nowOk = (bool) ($detected[$part]['ok'] ?? false);
+
+            if ($nowOk || ! $previousFresh) {
+                $detected[$streakKey] = 0;
+
+                continue;
+            }
+
+            $wasOk = (bool) data_get($previous, $part.'.ok', false);
+
+            if (! $wasOk) {
+                $detected[$streakKey] = $confirmations;
+
+                continue;
+            }
+
+            $streak = (int) data_get($previous, $streakKey, 0) + 1;
+            $detected[$streakKey] = $streak;
+
+            if ($streak < $confirmations) {
+                $detected[$part]['ok'] = true;
+                $failureHint = (string) ($detected[$part]['hint'] ?? '');
+                $detected[$part]['hint'] = trim('Un /health falló. Se mantiene el último OK hasta el próximo ciclo. '.$failureHint);
+            }
+        }
+
+        $held = ($detected['api_failure_streak'] > 0 && $detected['api']['ok'])
+            || ($detected['python_failure_streak'] > 0 && $detected['python']['ok']);
+
+        if ($held && is_array($previous) && isset($previous['engine'])) {
+            $detected['engine'] = $previous['engine'];
+        }
+
+        return $detected;
+    }
+
+    /**
+     * @param  array<string, mixed>  $runtime
+     * @return array<string, mixed>
+     */
+    private function present(string $origin, array $runtime): array
+    {
+        $pending = (bool) ($runtime['pending'] ?? false);
+        $runtime['pending'] = $pending;
+        $runtime['api']['pending'] = (bool) ($runtime['api']['pending'] ?? false);
+        $runtime['python']['pending'] = (bool) ($runtime['python']['pending'] ?? false);
+        $runtime['stale'] = false;
+
+        if ($pending) {
+            return $runtime;
+        }
+
+        $age = $this->ageSeconds(isset($runtime['checked_at']) && is_string($runtime['checked_at']) ? $runtime['checked_at'] : null);
+
+        if ($age === null || $age <= $this->staleAfterSeconds()) {
+            return $runtime;
+        }
+
+        $label = $this->originLabel($origin);
+        $minutes = max(1, intdiv($age, 60));
+        $hint = 'Sin lectura nueva de /health desde hace '.$minutes.' min. El cron no está refrescando el semáforo '.$label.'.';
+        $runtime['stale'] = true;
+        $runtime['api']['ok'] = false;
+        $runtime['api']['pending'] = false;
+        $runtime['api']['hint'] = $hint;
+        $runtime['python']['ok'] = false;
+        $runtime['python']['pending'] = false;
+        $runtime['python']['hint'] = $hint;
+
+        return $runtime;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function pendingRuntime(string $origin): array
+    {
+        $label = $this->originLabel($origin);
+        $hint = 'Aún no hay una lectura de /health. El próximo ciclo del cron la escribe.';
 
         return [
             'engine' => 'php-curl',
+            'pending' => true,
+            'stale' => false,
+            'checked_at' => null,
             'api' => [
                 'ok' => false,
+                'pending' => true,
                 'label' => 'API '.$label,
-                'hint' => 'El estado de la sonda se actualiza en segundo plano. No bloquea esta pantalla.',
+                'hint' => $hint,
             ],
             'python' => [
                 'ok' => false,
+                'pending' => true,
                 'label' => 'Sonda Python '.$label,
-                'hint' => 'El cron refresca /health. Esta página no espera a las sondas.',
+                'hint' => $hint,
             ],
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $sample
+     */
+    private function sampleIsFresh(array $sample): bool
+    {
+        if (! isset($sample['api'], $sample['python']) || ($sample['pending'] ?? false)) {
+            return false;
+        }
+
+        $age = $this->ageSeconds(isset($sample['checked_at']) && is_string($sample['checked_at']) ? $sample['checked_at'] : null);
+
+        if ($age === null) {
+            return true;
+        }
+
+        return $age <= $this->staleAfterSeconds();
+    }
+
+    private function ageSeconds(?string $checkedAt): ?int
+    {
+        if ($checkedAt === null || $checkedAt === '') {
+            return null;
+        }
+
+        try {
+            $checked = Carbon::parse($checkedAt);
+        } catch (Throwable) {
+            return null;
+        }
+
+        return now()->getTimestamp() - $checked->getTimestamp();
+    }
+
+    private function runtimeTtl(): int
+    {
+        return max(
+            self::RUNTIME_TTL_SECONDS,
+            $this->staleAfterSeconds() + 60,
+            (int) config('monitor.runtime_cache_seconds', self::RUNTIME_TTL_SECONDS),
+        );
+    }
+
+    private function staleAfterSeconds(): int
+    {
+        return max(
+            self::RUNTIME_STALE_FLOOR_SECONDS,
+            (int) config('monitor.runtime_stale_seconds', 900),
+        );
+    }
+
+    private function failureConfirmations(): int
+    {
+        return max(self::FAILURE_CONFIRMATIONS, (int) config('monitor.runtime_failure_confirmations', self::FAILURE_CONFIRMATIONS));
+    }
+
+    private function checksHealthFromThisProcess(): bool
+    {
+        return in_array(PHP_SAPI, ['cli', 'phpdbg'], true);
+    }
+
+    private function originLabel(string $origin): string
+    {
+        return $origin === MonitorTarget::ORIGIN_EXTERNAL ? 'Exterior' : 'Interior';
     }
 
     private function runtimeCacheKey(string $origin): string
@@ -249,7 +444,7 @@ class FastApiProbe
     private function detectRuntime(string $origin): array
     {
         $config = $this->configFor($origin);
-        $label = $origin === MonitorTarget::ORIGIN_EXTERNAL ? 'Exterior' : 'Interior';
+        $label = $this->originLabel($origin);
         $api = [
             'ok' => false,
             'label' => 'API '.$label,
@@ -262,13 +457,6 @@ class FastApiProbe
         ];
 
         if (! $config['enabled'] || $config['url'] === '') {
-            return ['engine' => 'php-curl', 'api' => $api, 'python' => $python];
-        }
-
-        if (PHP_SAPI !== 'cli' && PHP_SAPI !== 'phpdbg') {
-            $api['hint'] = 'La web no espera /health. El cron actualiza este semáforo.';
-            $python['hint'] = 'Sondeo en segundo plano.';
-
             return ['engine' => 'php-curl', 'api' => $api, 'python' => $python];
         }
 

@@ -498,7 +498,8 @@ new #[Title('Documentación')] class extends Component
 
                     <flux:heading size="sm">Cómo Laravel elige la sonda</flux:heading>
                     <flux:text>
-                        El cron (<span class="font-mono">* * * * * php artisan schedule:run</span>) dispara <span class="font-mono">monitor:run</span> cada 5 segundos.
+                        Con el cron de un minuto (<span class="font-mono">* * * * * php artisan schedule:run</span>), <span class="font-mono">monitor:run</span> corre una vez por minuto.
+                        Cada 5 segundos solo ocurre si el servidor deja vivo <span class="font-mono">php artisan schedule:work</span>.
                         El motor toma destinos vencidos (los nunca chequeados van primero), lee <span class="font-mono">probe_origin</span> y:
                     </flux:text>
                     <ol class="list-decimal space-y-1 pl-5 text-sm leading-6 text-zinc-600 dark:text-zinc-300">
@@ -556,11 +557,15 @@ new #[Title('Documentación')] class extends Component
 
                     <flux:heading size="sm">Semáforos del dashboard</flux:heading>
                     <flux:text>
-                        Cada poll de Livewire (5 s) Laravel hace <span class="font-mono">GET /health</span> a ambas APIs (sin Bearer; el timeout es más largo por el TLS del VPS).
+                        La pantalla no llama a <span class="font-mono">/health</span>. Muestra la última lectura que guardó <span class="font-mono">monitor:run</span> (sin Bearer; el timeout es más largo por el TLS del VPS).
+                        Esa lectura se conserva todo el día: un cron de un minuto no la borra ni la pinta roja entre corridas.
+                        Un <span class="font-mono">/health</span> fallido aislado tampoco la pone roja; la caída se confirma en el ciclo siguiente.
+                        Si pasan 15 minutos sin una lectura nueva, el semáforo queda rojo: el cron dejó de refrescar.
                     </flux:text>
                     <ul class="list-disc space-y-1 pl-5 text-sm leading-6 text-zinc-600 dark:text-zinc-300">
-                        <li><strong>API verde</strong> — uvicorn respondió.</li>
-                        <li><strong>Sonda Python verde</strong> — el JSON trae <span class="font-mono">probe=ok</span>.</li>
+                        <li><strong>API verde</strong> — el último <span class="font-mono">/health</span> confirmó que uvicorn respondió.</li>
+                        <li><strong>Sonda Python verde</strong> — ese JSON trae <span class="font-mono">probe=ok</span>.</li>
+                        <li><strong>Ámbar “Sin lectura”</strong> — el cron todavía no escribió el primer <span class="font-mono">/health</span>.</li>
                         <li><strong>Sitio ámbar “No monitoreado”</strong> — esa API no estaba usable al chequear.</li>
                     </ul>
                     <flux:text>

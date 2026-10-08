@@ -137,6 +137,65 @@ class MonitorDashboardTest extends TestCase
     }
 
     #[Test]
+    public function dashboard_keeps_probe_badges_green_between_minute_cron_runs(): void
+    {
+        config([
+            'monitor.probes.internal.enabled' => true,
+            'monitor.probes.internal.url' => 'http://127.0.0.1:8100',
+            'monitor.probes.external.enabled' => true,
+            'monitor.probes.external.url' => 'http://127.0.0.1:8200',
+            'monitor.runtime_cache_seconds' => 20,
+            'monitor.runtime_stale_seconds' => 30,
+        ]);
+
+        Http::fake([
+            'http://127.0.0.1:8100/health' => Http::response(['status' => 'ok', 'probe' => 'ok']),
+            'http://127.0.0.1:8200/health' => Http::response(['status' => 'ok', 'probe' => 'ok']),
+        ]);
+
+        app(FastApiProbe::class)->refreshRuntime();
+        $this->travel(45)->seconds();
+
+        $this->actingAs(User::factory()->create())
+            ->get(route('dashboard'))
+            ->assertOk()
+            ->assertSee('API Interior · OK')
+            ->assertSee('Sonda Interior · OK')
+            ->assertSee('API Exterior · OK')
+            ->assertSee('Sonda Exterior · OK')
+            ->assertDontSee('API Interior · DOWN')
+            ->assertDontSee('API Exterior · DOWN');
+    }
+
+    #[Test]
+    public function dashboard_shows_probe_down_only_after_the_scheduler_goes_quiet(): void
+    {
+        config([
+            'monitor.probes.internal.enabled' => true,
+            'monitor.probes.internal.url' => 'http://127.0.0.1:8100',
+            'monitor.probes.external.enabled' => true,
+            'monitor.probes.external.url' => 'http://127.0.0.1:8200',
+            'monitor.runtime_cache_seconds' => 20,
+            'monitor.runtime_stale_seconds' => 30,
+        ]);
+
+        Http::fake([
+            'http://127.0.0.1:8100/health' => Http::response(['status' => 'ok', 'probe' => 'ok']),
+            'http://127.0.0.1:8200/health' => Http::response(['status' => 'ok', 'probe' => 'ok']),
+        ]);
+
+        app(FastApiProbe::class)->refreshRuntime();
+        $this->travel(181)->seconds();
+
+        $this->actingAs(User::factory()->create())
+            ->get(route('dashboard'))
+            ->assertOk()
+            ->assertSee('API Interior · DOWN')
+            ->assertSee('API Exterior · DOWN')
+            ->assertSee('no está refrescando');
+    }
+
+    #[Test]
     public function dashboard_shows_origin_badges_and_stale_callout_for_external_probe(): void
     {
         MonitorTarget::factory()->create([

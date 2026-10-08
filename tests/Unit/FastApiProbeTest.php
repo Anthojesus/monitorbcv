@@ -74,8 +74,110 @@ class FastApiProbeTest extends TestCase
         $runtime = app(FastApiProbe::class)->runtime();
 
         $this->assertFalse($runtime['internal']['api']['ok']);
+        $this->assertTrue($runtime['internal']['api']['pending']);
         $this->assertFalse($runtime['external']['api']['ok']);
+        $this->assertTrue($runtime['external']['pending']);
         Http::assertNothingSent();
+    }
+
+    #[Test]
+    public function runtime_stays_up_across_a_minute_cron_gap_even_with_a_short_ttl(): void
+    {
+        config([
+            'monitor.probes.internal.enabled' => true,
+            'monitor.probes.internal.url' => 'http://127.0.0.1:8100',
+            'monitor.probes.external.enabled' => false,
+            'monitor.runtime_cache_seconds' => 20,
+            'monitor.runtime_stale_seconds' => 30,
+        ]);
+
+        Http::fake([
+            'http://127.0.0.1:8100/health' => Http::response([
+                'status' => 'ok',
+                'probe' => 'ok',
+            ]),
+        ]);
+
+        app(FastApiProbe::class)->refreshRuntime('internal');
+        $this->travel(45)->seconds();
+        app()->forgetInstance(FastApiProbe::class);
+
+        $runtime = app(FastApiProbe::class)->runtime('internal');
+
+        $this->assertTrue($runtime['api']['ok']);
+        $this->assertTrue($runtime['python']['ok']);
+        $this->assertFalse($runtime['pending']);
+        Http::assertSentCount(1);
+    }
+
+    #[Test]
+    public function runtime_turns_down_when_the_scheduler_stops_refreshing(): void
+    {
+        config([
+            'monitor.probes.internal.enabled' => true,
+            'monitor.probes.internal.url' => 'http://127.0.0.1:8100',
+            'monitor.probes.external.enabled' => false,
+            'monitor.runtime_cache_seconds' => 20,
+            'monitor.runtime_stale_seconds' => 30,
+        ]);
+
+        Http::fake([
+            'http://127.0.0.1:8100/health' => Http::response([
+                'status' => 'ok',
+                'probe' => 'ok',
+            ]),
+        ]);
+
+        app(FastApiProbe::class)->refreshRuntime('internal');
+        $this->travel(181)->seconds();
+        app()->forgetInstance(FastApiProbe::class);
+
+        $runtime = app(FastApiProbe::class)->runtime('internal');
+
+        $this->assertFalse($runtime['api']['ok']);
+        $this->assertFalse($runtime['python']['ok']);
+        $this->assertFalse($runtime['pending']);
+        $this->assertTrue($runtime['stale']);
+        $this->assertStringContainsString('no está refrescando', $runtime['api']['hint']);
+        Http::assertSentCount(1);
+    }
+
+    #[Test]
+    public function a_single_health_failure_does_not_flip_a_live_probe(): void
+    {
+        config([
+            'monitor.probes.internal.enabled' => true,
+            'monitor.probes.internal.url' => 'http://127.0.0.1:8100',
+            'monitor.probes.external.enabled' => false,
+        ]);
+
+        Http::fake([
+            'http://127.0.0.1:8100/health' => Http::sequence()
+                ->push(['status' => 'ok', 'probe' => 'ok'])
+                ->push(['status' => 'down'], 500)
+                ->push(['status' => 'down'], 500)
+                ->push(['status' => 'ok', 'probe' => 'ok']),
+        ]);
+
+        $probe = app(FastApiProbe::class);
+
+        $first = $probe->refreshRuntime('internal');
+        $this->assertTrue($first['api']['ok']);
+
+        $blip = $probe->refreshRuntime('internal');
+        $this->assertTrue($blip['api']['ok']);
+        $this->assertTrue($blip['python']['ok']);
+        $this->assertStringContainsString('Se mantiene el último OK', $blip['api']['hint']);
+        $this->assertTrue($probe->healthy('internal'));
+
+        $confirmed = $probe->refreshRuntime('internal');
+        $this->assertFalse($confirmed['api']['ok']);
+        $this->assertFalse($confirmed['python']['ok']);
+        $this->assertFalse($probe->healthy('internal'));
+
+        $recovered = $probe->refreshRuntime('internal');
+        $this->assertTrue($recovered['api']['ok']);
+        $this->assertTrue($recovered['python']['ok']);
     }
 
     #[Test]

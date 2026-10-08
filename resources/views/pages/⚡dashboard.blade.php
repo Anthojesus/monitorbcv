@@ -159,15 +159,15 @@ new #[Title('Centro de Control')] class extends Component
                         [
                             'label' => 'Interior',
                             'items' => [
-                                ['name' => 'API Interior', 'ok' => (bool) ($internalRt['api']['ok'] ?? false), 'hint' => $internalRt['api']['hint'] ?? ''],
-                                ['name' => 'Sonda Interior', 'ok' => (bool) ($internalRt['python']['ok'] ?? false), 'hint' => $internalRt['python']['hint'] ?? ''],
+                                ['name' => 'API Interior', 'ok' => (bool) ($internalRt['api']['ok'] ?? false), 'pending' => (bool) ($internalRt['api']['pending'] ?? false), 'hint' => $internalRt['api']['hint'] ?? ''],
+                                ['name' => 'Sonda Interior', 'ok' => (bool) ($internalRt['python']['ok'] ?? false), 'pending' => (bool) ($internalRt['python']['pending'] ?? false), 'hint' => $internalRt['python']['hint'] ?? ''],
                             ],
                         ],
                         [
                             'label' => 'Exterior',
                             'items' => [
-                                ['name' => 'API Exterior', 'ok' => (bool) ($externalRt['api']['ok'] ?? false), 'hint' => $externalRt['api']['hint'] ?? ''],
-                                ['name' => 'Sonda Exterior', 'ok' => (bool) ($externalRt['python']['ok'] ?? false), 'hint' => $externalRt['python']['hint'] ?? ''],
+                                ['name' => 'API Exterior', 'ok' => (bool) ($externalRt['api']['ok'] ?? false), 'pending' => (bool) ($externalRt['api']['pending'] ?? false), 'hint' => $externalRt['api']['hint'] ?? ''],
+                                ['name' => 'Sonda Exterior', 'ok' => (bool) ($externalRt['python']['ok'] ?? false), 'pending' => (bool) ($externalRt['python']['pending'] ?? false), 'hint' => $externalRt['python']['hint'] ?? ''],
                             ],
                         ],
                     ];
@@ -193,43 +193,55 @@ new #[Title('Centro de Control')] class extends Component
 
                     <a href="{{ route('monitor.apis') }}" wire:navigate class="grid gap-2 sm:grid-cols-2" title="Ver detalle y logs de las sondas">
                         @foreach ($probeGroups as $group)
-                            @php $groupOk = collect($group['items'])->every(fn (array $item): bool => $item['ok']); @endphp
+                            @php
+                                $groupState = collect($group['items'])->contains(fn (array $item): bool => ! $item['ok'] && ! ($item['pending'] ?? false))
+                                    ? 'down'
+                                    : (collect($group['items'])->every(fn (array $item): bool => $item['ok']) ? 'ok' : 'pending');
+                            @endphp
                             <div @class([
                                 'rounded-xl border px-3 py-2.5 transition hover:bg-white/5',
-                                'border-emerald-400/25 bg-emerald-500/10' => $groupOk,
-                                'border-rose-400/30 bg-rose-500/10' => ! $groupOk,
+                                'border-emerald-400/25 bg-emerald-500/10' => $groupState === 'ok',
+                                'border-amber-400/30 bg-amber-500/10' => $groupState === 'pending',
+                                'border-rose-400/30 bg-rose-500/10' => $groupState === 'down',
                             ])>
                                 <div class="mb-2 flex items-center justify-between gap-2">
                                     <span class="text-[10px] font-semibold tracking-[0.16em] text-zinc-400 uppercase">{{ $group['label'] }}</span>
                                     <span @class([
                                         'inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-bold uppercase',
-                                        'bg-emerald-500/20 text-emerald-300' => $groupOk,
-                                        'bg-rose-500/20 text-rose-200' => ! $groupOk,
+                                        'bg-emerald-500/20 text-emerald-300' => $groupState === 'ok',
+                                        'bg-amber-500/20 text-amber-200' => $groupState === 'pending',
+                                        'bg-rose-500/20 text-rose-200' => $groupState === 'down',
                                     ])>
                                         <span @class([
                                             'size-1.5 rounded-full',
-                                            'bg-emerald-400 shadow-[0_0_8px] shadow-emerald-300 animate-pulse' => $groupOk,
-                                            'bg-rose-400 shadow-[0_0_8px] shadow-rose-300 animate-pulse' => ! $groupOk,
+                                            'bg-emerald-400 shadow-[0_0_8px] shadow-emerald-300 animate-pulse' => $groupState === 'ok',
+                                            'bg-amber-300' => $groupState === 'pending',
+                                            'bg-rose-400 shadow-[0_0_8px] shadow-rose-300 animate-pulse' => $groupState === 'down',
                                         ])></span>
-                                        {{ $groupOk ? 'En línea' : 'Caída' }}
+                                        {{ $groupState === 'ok' ? 'En línea' : ($groupState === 'pending' ? 'Sin lectura' : 'Caída') }}
                                     </span>
                                 </div>
                                 <div class="flex flex-wrap gap-1.5">
                                     @foreach ($group['items'] as $chip)
+                                        @php
+                                            $chipState = $chip['ok'] ? 'ok' : (($chip['pending'] ?? false) ? 'pending' : 'down');
+                                        @endphp
                                         <span
                                             title="{{ $chip['hint'] }}"
                                             @class([
                                                 'inline-flex min-w-0 items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] font-semibold tracking-wide',
-                                                'bg-emerald-500/15 text-emerald-100' => $chip['ok'],
-                                                'bg-rose-500/20 text-rose-100' => ! $chip['ok'],
+                                                'bg-emerald-500/15 text-emerald-100' => $chipState === 'ok',
+                                                'bg-amber-500/15 text-amber-100' => $chipState === 'pending',
+                                                'bg-rose-500/20 text-rose-100' => $chipState === 'down',
                                             ])
                                         >
                                             <span @class([
                                                 'size-1.5 shrink-0 rounded-full',
-                                                'bg-emerald-300 animate-pulse' => $chip['ok'],
-                                                'bg-rose-300' => ! $chip['ok'],
+                                                'bg-emerald-300 animate-pulse' => $chipState === 'ok',
+                                                'bg-amber-300' => $chipState === 'pending',
+                                                'bg-rose-300' => $chipState === 'down',
                                             ])></span>
-                                            <span class="truncate">{{ $chip['name'] }} · {{ $chip['ok'] ? 'OK' : 'DOWN' }}</span>
+                                            <span class="truncate">{{ $chip['name'] }} · {{ $chipState === 'ok' ? 'OK' : ($chipState === 'pending' ? 'SIN DATO' : 'DOWN') }}</span>
                                         </span>
                                     @endforeach
                                 </div>

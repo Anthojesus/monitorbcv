@@ -44,6 +44,8 @@ new #[Title('Logs de API')] class extends Component
                 $feed = $this->feeds[$origin];
                 $apiOk = (bool) data_get($feed, 'runtime.api.ok');
                 $pythonOk = (bool) data_get($feed, 'runtime.python.ok');
+                $apiPending = ! $apiOk && (bool) data_get($feed, 'runtime.api.pending');
+                $pythonPending = ! $pythonOk && (bool) data_get($feed, 'runtime.python.pending');
             @endphp
             <flux:card class="space-y-4">
                 <div class="flex flex-wrap items-center justify-between gap-2">
@@ -55,13 +57,15 @@ new #[Title('Logs de API')] class extends Component
                         <span @class([
                             'inline-flex items-center rounded-full px-2.5 py-1 text-xs font-bold text-white',
                             'bg-emerald-500 shadow-[0_0_14px] shadow-emerald-400/70' => $apiOk,
-                            'bg-rose-600' => ! $apiOk,
-                        ])>API · {{ $apiOk ? 'OK' : 'DOWN' }}</span>
+                            'bg-amber-500' => $apiPending,
+                            'bg-rose-600' => ! $apiOk && ! $apiPending,
+                        ])>API · {{ $apiOk ? 'OK' : ($apiPending ? 'SIN DATO' : 'DOWN') }}</span>
                         <span @class([
                             'inline-flex items-center rounded-full px-2.5 py-1 text-xs font-bold text-white',
                             'bg-emerald-500 shadow-[0_0_14px] shadow-emerald-400/70' => $pythonOk,
-                            'bg-rose-600' => ! $pythonOk,
-                        ])>Sonda · {{ $pythonOk ? 'OK' : 'DOWN' }}</span>
+                            'bg-amber-500' => $pythonPending,
+                            'bg-rose-600' => ! $pythonOk && ! $pythonPending,
+                        ])>Sonda · {{ $pythonOk ? 'OK' : ($pythonPending ? 'SIN DATO' : 'DOWN') }}</span>
                     </div>
                 </div>
 

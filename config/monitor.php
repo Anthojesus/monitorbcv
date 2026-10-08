@@ -13,7 +13,9 @@ return [
 
     'web_tick_budget_ms' => (int) env('MONITOR_WEB_TICK_BUDGET_MS', 2500),
 
-    'runtime_cache_seconds' => (int) env('MONITOR_RUNTIME_CACHE_SECONDS', 20),
+    'runtime_cache_seconds' => (int) env('MONITOR_RUNTIME_CACHE_SECONDS', 86400),
+
+    'runtime_stale_seconds' => (int) env('MONITOR_RUNTIME_STALE_SECONDS', 900),
 
     'web_tick_stale_seconds' => (int) env('MONITOR_WEB_TICK_STALE_SECONDS', 12),
 
