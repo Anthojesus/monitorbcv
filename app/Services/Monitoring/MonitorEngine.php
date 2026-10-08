@@ -17,11 +17,15 @@ class MonitorEngine
         private HttpProbe $httpProbe,
         private FastApiProbe $fastApiProbe,
         private HealthPayloadAnalyzer $healthAnalyzer,
+        private AvailabilityVerdict $verdict,
     ) {}
 
     public function run(MonitorTarget $target): MonitorCheck
     {
-        $payload = $this->healthAnalyzer->enrich($target, $this->collect($target));
+        $payload = $this->verdict->apply(
+            $target,
+            $this->healthAnalyzer->enrich($target, $this->collect($target)),
+        );
         $unavailable = (bool) ($payload['probe_unavailable'] ?? false);
 
         $check = new MonitorCheck;

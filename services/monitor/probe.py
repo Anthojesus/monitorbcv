@@ -214,16 +214,28 @@ def probe(target: dict[str, Any]) -> dict[str, Any]:
     timings["total"] = ms_since(t0)
     status = http.get("status")
     keyword_found = None if keyword is None else keyword.encode() in body
+    kind = str(target.get("kind") or "http")
+    host_ok = error is None and isinstance(status, int) and 100 <= status <= 599
+    page_ok = host_ok and 200 <= int(status) < 400
     if error:
         reason = classify_error(error) or "transport"
         up = False
+        host_ok = False
+        page_ok = False
     elif status is None:
         reason = "no_response"
         up = False
+        host_ok = False
+        page_ok = False
     elif accept_any:
         if keyword_found is False:
             reason = "keyword_missing"
             up = False
+            page_ok = False
+        elif kind != "proxy" and int(status) >= 500:
+            reason = "http_5xx"
+            up = False
+            page_ok = False
         else:
             listed = [code for code in expected if code != ANY_HTTP_STATUS] or DEFAULT_EXPECTED_STATUS
             reason = "ok" if status in listed else "http_reachable"
@@ -231,9 +243,15 @@ def probe(target: dict[str, Any]) -> dict[str, Any]:
     elif status not in expected:
         reason = "unexpected_status"
         up = False
+        page_ok = False
     elif keyword_found is False:
         reason = "keyword_missing"
         up = False
+        page_ok = False
+    elif kind != "proxy" and int(status) >= 500:
+        reason = "http_5xx"
+        up = False
+        page_ok = False
     else:
         reason = "ok"
         up = True
@@ -247,7 +265,7 @@ def probe(target: dict[str, Any]) -> dict[str, Any]:
         "started_at": started_at,
         "finished_at": now_iso(),
         "ok": up,
-        "availability": {"up": up, "reason": reason},
+        "availability": {"up": up, "reason": reason, "host_ok": host_ok, "page_ok": page_ok},
         "request": {"method": method, "url": url, "final_url": url},
         "dns": dns,
         "tcp": tcp,

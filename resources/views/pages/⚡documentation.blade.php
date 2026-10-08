@@ -142,19 +142,21 @@ new #[Title('Documentación')] class extends Component
                         <span class="inline-flex items-center rounded-md bg-zinc-500 px-2 py-0.5 text-xs font-bold text-white">Pendiente</span>
                     </div>
                     <flux:text>
-                        Es el resultado del último sondeo. <strong>UP</strong> significa que el destino cumplió la regla configurada
-                        (código HTTP esperado, palabra clave o health JSON). <strong>DOWN</strong> significa que falló esa regla o no se pudo completar el chequeo.
+                        Es el resultado del último sondeo. Cada destino tiene <strong>dos verdades</strong>:
+                        <em>Host</em> (¿el servidor contestó?) y <em>Página</em> (¿la respuesta es de negocio sana?).
+                        <strong>UP</strong> exige página OK (código esperado o 2xx/3xx). <strong>DOWN</strong> es corte de red o página no OK.
                         <strong>Pendiente</strong> aparece cuando todavía no hay ningún sondeo.
+                        <strong>Sin confirmar</strong> aparece si la sonda no midió: el último verde no se toma por UP.
                     </flux:text>
                     <flux:callout icon="information-circle">
                         Un sitio puede estar UP y aun así tener un certificado por vencer o un grado de cabeceras bajo. UP/DOWN no mide seguridad: solo disponibilidad.
                     </flux:callout>
                     <flux:text>
                         En sitios HTTP puedes elegir dos criterios: <em>solo códigos HTTP esperados</em> (por ejemplo 200, 301)
-                        o <em>el servidor responde</em> (cualquier código HTTP cuenta como alcanzable).
-                        Un badge <strong>UP 500</strong> con motivo «El servidor responde» quiere decir: el monitor llegó al host y recibió un status; no que la página esté bien.
-                        Un 5xx es fallo de la aplicación, no un corte de red. Si ese error debe ser DOWN, cambia el criterio a códigos esperados.
-                        Los web services (`/health`) se marcan DOWN si el JSON global o una dependencia está DOWN.
+                        o <em>el servidor responde</em> (el host cuenta como alcanzable con cualquier HTTP).
+                        Un 5xx en un portal (502, 503, 504) es <strong>DOWN de página</strong> aunque el host haya contestado: el mismo criterio que la herramienta del banco (status ≠ 200).
+                        El badge antiguo <strong>UP 500</strong> ya no aplica a portales; solo un proxy en modo alcanzable puede seguir verde con un 5xx de listener.
+                        Un 4xx en modo alcanzable queda Degradado. Los web services (`/health`) se marcan DOWN si el JSON global o una dependencia está DOWN.
                     </flux:text>
                 </flux:card>
             </article>
@@ -173,7 +175,8 @@ new #[Title('Documentación')] class extends Component
                             </thead>
                             <tbody class="align-top text-zinc-600 dark:text-zinc-300">
                                 <tr class="border-t border-zinc-100 dark:border-white/5"><td class="px-3 py-2.5 font-medium text-zinc-800 dark:text-white">Respuesta válida</td><td class="px-3 py-2.5">El sondeo cumplió la regla. El destino se considera UP.</td></tr>
-                                <tr class="border-t border-zinc-100 dark:border-white/5"><td class="px-3 py-2.5 font-medium text-zinc-800 dark:text-white">El servidor responde</td><td class="px-3 py-2.5">El host contestó (puede ser 403, 500, etc.). El verde es “máquina alcanzable”, no “página bien”. Un 5xx es fallo de la app. Cambia a códigos esperados si eso debe ser DOWN.</td></tr>
+                                <tr class="border-t border-zinc-100 dark:border-white/5"><td class="px-3 py-2.5 font-medium text-zinc-800 dark:text-white">El servidor responde</td><td class="px-3 py-2.5">El host contestó (403 u otro 4xx). El chip Host es OK; la página no. En sitios web un 4xx queda Degradado.</td></tr>
+                                <tr class="border-t border-zinc-100 dark:border-white/5"><td class="px-3 py-2.5 font-medium text-zinc-800 dark:text-white">La página respondió 5xx</td><td class="px-3 py-2.5">El host contestó 502/503/504. No es un corte de red. En un portal es DOWN (página no OK). El proxy delante puede seguir UP.</td></tr>
                                 <tr class="border-t border-zinc-100 dark:border-white/5"><td class="px-3 py-2.5 font-medium text-zinc-800 dark:text-white">Código HTTP fuera de lo esperado</td><td class="px-3 py-2.5">Llegó una respuesta, pero el status no coincide con los códigos aceptados.</td></tr>
                                 <tr class="border-t border-zinc-100 dark:border-white/5"><td class="px-3 py-2.5 font-medium text-zinc-800 dark:text-white">No resolvió el DNS</td><td class="px-3 py-2.5">El nombre del host no se tradujo a una IP.</td></tr>
                                 <tr class="border-t border-zinc-100 dark:border-white/5"><td class="px-3 py-2.5 font-medium text-zinc-800 dark:text-white">No estableció TCP</td><td class="px-3 py-2.5">Se conoció la IP, pero no se abrió el puerto (firewall, servicio caído, red).</td></tr>
@@ -184,7 +187,7 @@ new #[Title('Documentación')] class extends Component
                                 <tr class="border-t border-zinc-100 dark:border-white/5"><td class="px-3 py-2.5 font-medium text-zinc-800 dark:text-white">El health global está DOWN</td><td class="px-3 py-2.5">El JSON del web service reporta el servicio caído.</td></tr>
                                 <tr class="border-t border-zinc-100 dark:border-white/5"><td class="px-3 py-2.5 font-medium text-zinc-800 dark:text-white">Una dependencia del health está DOWN</td><td class="px-3 py-2.5">LDAP, base de datos u otro check interno falló.</td></tr>
                                 <tr class="border-t border-zinc-100 dark:border-white/5"><td class="px-3 py-2.5 font-medium text-zinc-800 dark:text-white">El JSON de health no es válido</td><td class="px-3 py-2.5">La URL respondió, pero el cuerpo no es un health reconocible.</td></tr>
-                                <tr class="border-t border-zinc-100 dark:border-white/5"><td class="px-3 py-2.5 font-medium text-zinc-800 dark:text-white">No se está monitoreando</td><td class="px-3 py-2.5">La sonda Interior o Exterior está caída o apagada. No es una falla del portal. El último UP/DOWN se conserva.</td></tr>
+                                <tr class="border-t border-zinc-100 dark:border-white/5"><td class="px-3 py-2.5 font-medium text-zinc-800 dark:text-white">No se está monitoreando</td><td class="px-3 py-2.5">La sonda Interior o Exterior está caída o apagada. No es una falla del portal. El último estado no se pinta como UP.</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -276,7 +279,7 @@ new #[Title('Documentación')] class extends Component
                     </div>
                     <flux:text>
                         Muestra los <strong>días restantes</strong> hasta el vencimiento del certificado que presentó el servidor.
-                        En el Centro de Control, menos de 15 días se marcan en ámbar; menos de 7 es crítico. Un sitio UP con TTFB alto o 5xx pasa a Degradado.
+                        En el Centro de Control, menos de 15 días se marcan en ámbar; menos de 7 es crítico. Un sitio UP con TTFB alto pasa a Degradado. Un 5xx de portal es DOWN, no Degradado.
                     </flux:text>
                     <flux:callout icon="shield-check" variant="warning">
                         <strong>Sin dato TLS</strong> aparece si el chequeo no llegó a negociar HTTPS. Una CA corporativa que no está en el almacén público no marca el sitio DOWN por sí sola; un certificado vencido o con hostname incorrecto sí es incidencia.
@@ -518,7 +521,7 @@ new #[Title('Documentación')] class extends Component
                         <li><strong>TCP</strong> — conexión al host:puerto.</li>
                         <li><strong>TLS</strong> (si es HTTPS) — handshake, certificado, días restantes, cipher. Usa el almacén de confianza del sistema.</li>
                         <li><strong>HTTP</strong> — TTFB, descarga, status, headers, título y SHA-256 del cuerpo.</li>
-                        <li><strong>Regla de negocio</strong> — ¿el status está en los códigos esperados? ¿aparece la palabra clave? El valor <span class="font-mono">0</span> significa “cualquier HTTP cuenta” (<span class="font-mono">http_reachable</span> si no es un 200 de la lista).</li>
+                        <li><strong>Regla de negocio</strong> — ¿el host contestó? ¿la página está OK? El valor <span class="font-mono">0</span> significa “cualquier HTTP cuenta como host alcanzable”. En un sitio web un 5xx es <span class="font-mono">http_5xx</span> (DOWN de página). Un 4xx en reachable es <span class="font-mono">http_reachable</span> (Degradado).</li>
                     </ol>
                     <flux:text>
                         Si el certificado falla por emisor no confiable, reintenta sin verificar y marca <span class="font-mono">trust: issuer_untrusted</span> (el sitio puede seguir alcanzable).
@@ -541,7 +544,7 @@ new #[Title('Documentación')] class extends Component
                             <p class="mt-1 text-sm text-zinc-600 dark:text-zinc-300">
                                 Laravel (aún en el BCV) pega por HTTPS al VPS. El VPS abre la URL <strong>desde fuera</strong>.
                                 Si el portal solo existe en la LAN, el exterior lo verá DOWN (timeout, DNS o TLS).
-                                Eso es el dato: ¿se ve desde Internet? Si el VPS está caído, <strong>no se monitorea</strong> y se conserva el último UP/DOWN.
+                                Eso es el dato: ¿se ve desde Internet? Si el VPS está caído, <strong>no se monitorea</strong> y el último estado no se pinta como UP.
                             </p>
                         </div>
                     </div>

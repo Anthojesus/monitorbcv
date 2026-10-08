@@ -19,6 +19,7 @@ class MonitorCopy
             'no_response' => 'Sin respuesta HTTP',
             'unexpected_status' => 'Código HTTP fuera de lo esperado',
             'http_reachable' => 'El servidor responde',
+            'http_5xx' => 'La página respondió 5xx',
             'keyword_missing' => 'No apareció la palabra clave',
             'health_down' => 'El health global está DOWN',
             'health_check_down' => 'Una dependencia del health está DOWN',
@@ -35,10 +36,13 @@ class MonitorCopy
     {
         return match ($reason) {
             'http_reachable' => self::reachableHint($status),
+            'http_5xx' => $status !== null
+                ? "El host contestó HTTP {$status}: no es un corte de red. La página o el upstream fallaron (mismo criterio que el banco: no es 200). El proxy puede estar UP."
+                : 'El host contestó un 5xx: la página no está OK aunque la máquina sea alcanzable.',
             'unexpected_status' => $status !== null
                 ? "Llegó HTTP {$status}, pero este sitio solo acepta los códigos que configuraste. El host respondió; si ese código debe ser UP, añádelo a la lista o usa «El servidor responde»."
                 : 'Llegó una respuesta HTTP que no está en la lista de códigos aceptados.',
-            'probe_unavailable' => 'No se está monitoreando: el servicio '.self::originLabel($origin).' (sonda FastAPI) está caído o apagado. No es una falla del portal. El último UP/DOWN se conserva.',
+            'probe_unavailable' => 'No se está monitoreando: el servicio '.self::originLabel($origin).' (sonda FastAPI) está caído o apagado. No es una falla del portal. El último estado no está confirmado; no lo tome por UP.',
             default => null,
         };
     }
@@ -51,14 +55,14 @@ class MonitorCopy
     private static function reachableHint(?int $status): string
     {
         if ($status !== null && $status >= 500) {
-            return "El host contestó HTTP {$status}: la máquina está alcanzable, no es un corte de red. El verde no significa que la página funcione; un 5xx es fallo de la aplicación. Si un error de servidor debe ser DOWN, edita el sitio y elige «Solo códigos HTTP esperados».";
+            return "El host contestó HTTP {$status}: la máquina está alcanzable, no es un corte de red. En un sitio web eso ya es DOWN de página (5xx). En un proxy, el host sigue contando como alcanzable.";
         }
 
         if ($status !== null && $status >= 400) {
-            return "El host contestó HTTP {$status}: hay respuesta, no un corte de red. El verde solo indica que el servidor contestó. Si ese código no debe ser UP, edita el sitio y elige «Solo códigos HTTP esperados».";
+            return "El host contestó HTTP {$status}: hay respuesta, no un corte de red. La página no es 2xx/3xx: queda Degradado. Si ese código debe ser UP, añádelo a los códigos esperados.";
         }
 
-        return 'El criterio de este sitio es «el servidor responde»: cualquier HTTP cuenta como UP, aunque no sea 200. Si solo quieres verde con códigos concretos, edita el sitio y cambia el criterio.';
+        return 'El criterio «el servidor responde» marca el host alcanzable con cualquier HTTP. En sitios web un 5xx es DOWN de página; un 4xx queda Degradado. Use este criterio sobre todo para proxies.';
     }
 
     public static function text(mixed $value, string $fallback = '—'): string

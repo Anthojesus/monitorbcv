@@ -14,7 +14,10 @@ use Throwable;
 
 class HttpProbe
 {
-    public function __construct(private SecurityHeaderAnalyzer $securityHeaders) {}
+    public function __construct(
+        private SecurityHeaderAnalyzer $securityHeaders,
+        private AvailabilityVerdict $verdict,
+    ) {}
 
     /**
      * @return array<string, mixed>
@@ -69,7 +72,7 @@ class HttpProbe
         $dns = $this->dns($target->url, $curl);
         $tls = $this->tls($curl, $target->url, $issuerFallback);
         $content = $this->content($body, $headers, $target);
-        $availability = $this->availability($status, $target, $content, $error);
+        $availability = $this->verdict->evaluate($target, $status, $content, $error);
 
         $payload = [
             'schema_version' => (string) config('monitor.schema_version'),
@@ -292,32 +295,6 @@ class HttpProbe
                 'is_json' => str_contains(strtolower($headers['content-type'] ?? ''), 'json'),
             ],
         ];
-    }
-
-    /**
-     * @param  array<string, mixed>  $content
-     * @param  array<string, mixed>|null  $error
-     * @return array<string, mixed>
-     */
-    private function availability(?int $status, MonitorTarget $target, array $content, ?array $error): array
-    {
-        if ($error !== null) {
-            return ['up' => false, 'reason' => ProbeErrorClassifier::reason($error) ?? 'transport'];
-        }
-
-        if ($status === null) {
-            return ['up' => false, 'reason' => 'no_response'];
-        }
-
-        if (! $target->acceptsHttpStatus($status)) {
-            return ['up' => false, 'reason' => 'unexpected_status'];
-        }
-
-        if (($content['check']['keyword_found'] ?? null) === false) {
-            return ['up' => false, 'reason' => 'keyword_missing'];
-        }
-
-        return ['up' => true, 'reason' => $target->httpSuccessReason($status)];
     }
 
     /**

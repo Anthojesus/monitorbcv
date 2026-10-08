@@ -43,11 +43,23 @@ class ProxyCorrelation
                 'title' => 'Falla de la aplicación',
                 'detail' => 'El proxy está UP. El corte está en la app, el backend o el upstream, no en el proxy que la contiene.',
             ],
+            $proxyKey === 'ok' && $siteKey === 'degraded' => [
+                'key' => 'app_behind_proxy',
+                'tone' => 'rose',
+                'title' => 'Falla de la aplicación',
+                'detail' => 'El proxy responde bien. La página o el health detrás no están sanos (4xx/5xx, lentitud o SSL). Priorice el upstream.',
+            ],
             $proxyKey === 'degraded' && $siteKey === 'down' => [
                 'key' => 'app_behind_proxy',
                 'tone' => 'rose',
                 'title' => 'Falla de la aplicación',
                 'detail' => 'El proxy responde (degradado). Priorice el upstream / la aplicación, no un corte total del proxy.',
+            ],
+            $proxyKey === 'degraded' && $siteKey === 'degraded' => [
+                'key' => 'proxy_and_app',
+                'tone' => 'amber',
+                'title' => 'Proxy y app degradados',
+                'detail' => 'Ambos responden con incidencia. Revise el proxy y el upstream; no asuma un solo culpable.',
             ],
             $proxyKey === 'down' && $siteKey === 'ok' => [
                 'key' => 'proxy_path_down',

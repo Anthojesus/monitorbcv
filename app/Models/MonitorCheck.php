@@ -46,4 +46,18 @@ class MonitorCheck extends Model
         return (bool) data_get($this->payload, 'probe_unavailable')
             || $this->availability_reason === 'probe_unavailable';
     }
+
+    public function hostOk(): ?bool
+    {
+        $value = data_get($this->payload, 'availability.host_ok');
+
+        return is_bool($value) ? $value : null;
+    }
+
+    public function pageOk(): ?bool
+    {
+        $value = data_get($this->payload, 'availability.page_ok');
+
+        return is_bool($value) ? $value : null;
+    }
 }

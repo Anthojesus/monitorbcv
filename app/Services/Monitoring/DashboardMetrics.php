@@ -46,10 +46,19 @@ class DashboardMetrics
      */
     private function http(Collection $targets, Collection $checks, array $runtime, DateTimeInterface $since): array
     {
-        $up = $targets->where('last_ok', true)->count();
-        $down = $targets->where('last_ok', false)->count();
-        $unknown = $targets->whereNull('last_ok')->count();
-        $byOrigin = $this->byOrigin($targets, $runtime);
+        $condition = app(SiteCondition::class);
+        $proxyCorrelation = app(ProxyCorrelation::class);
+        $conditions = [];
+        foreach ($targets as $target) {
+            $originHealthy = (bool) data_get($runtime, $target->probeOrigin().'.api.ok');
+            $conditions[$target->id] = $condition->evaluate($target, $target->checks, $originHealthy);
+        }
+        $keys = collect($conditions)->pluck('key');
+        $up = $keys->filter(fn (mixed $key): bool => $key === 'ok')->count();
+        $down = $keys->filter(fn (mixed $key): bool => $key === 'down')->count();
+        $degraded = $keys->filter(fn (mixed $key): bool => $key === 'degraded')->count();
+        $unknown = $keys->filter(fn (mixed $key): bool => in_array($key, ['unmonitored', 'pending', 'unknown'], true))->count();
+        $byOrigin = $this->byOrigin($targets, $runtime, $conditions);
 
         $statusTotal = max(1, $checks->count());
         $statusBars = collect([
@@ -67,15 +76,7 @@ class DashboardMetrics
         $networkSamples = $checks->map(fn (MonitorCheck $check) => MonitorCopy::network($check->payload)['ms'])->filter(fn ($ms) => $ms !== null);
         $avgNetMs = $networkSamples->isEmpty() ? 0 : (int) round($networkSamples->avg());
         $sslWarnDays = max(1, (int) config('monitor.degradation.ssl_warning_days', 15));
-        $condition = app(SiteCondition::class);
-        $proxyCorrelation = app(ProxyCorrelation::class);
-        $conditions = [];
-        foreach ($targets as $target) {
-            $originHealthy = (bool) data_get($runtime, $target->probeOrigin().'.api.ok');
-            $conditions[$target->id] = $condition->evaluate($target, $target->checks, $originHealthy);
-        }
         $diagnoses = app(OriginCorrelation::class)->diagnoses($targets, $conditions);
-        $degraded = collect($conditions)->where('key', 'degraded')->count();
         $sslSoon = $targets->filter(function (MonitorTarget $target) use ($sslWarnDays) {
             $days = data_get($target->checks->first()?->payload, 'tls.certificate.days_remaining');
 
@@ -156,7 +157,16 @@ class DashboardMetrics
                 })
                 ->all(),
             'targets' => $targets
-                ->sortBy(fn (MonitorTarget $target) => $target->last_ok === false ? 0 : 1)
+                ->sortBy(function (MonitorTarget $target) use ($conditions): int {
+                    return match ($conditions[$target->id]['key'] ?? 'pending') {
+                        'down' => 0,
+                        'degraded' => 1,
+                        'unmonitored' => 2,
+                        'unknown' => 3,
+                        'pending' => 4,
+                        default => 5,
+                    };
+                })
                 ->values()
                 ->map(function (MonitorTarget $target) use ($conditions, $diagnoses, $runtime, $proxyCorrelation) {
                     $recent = $target->checks;
@@ -191,6 +201,8 @@ class DashboardMetrics
                         'origin_label' => MonitorCopy::originLabel($target->probeOrigin()),
                         'probe_unavailable' => $probeUnavailable && ! $originHealthy,
                         'condition' => $siteCondition,
+                        'host_ok' => $siteCondition['host_ok'] ?? null,
+                        'page_ok' => $siteCondition['page_ok'] ?? null,
                         'diagnosis' => $pair,
                         'health' => data_get($payload, 'health'),
                         'ok' => $target->last_ok,
@@ -222,9 +234,10 @@ class DashboardMetrics
     /**
      * @param  Collection<int, MonitorTarget>  $targets
      * @param  array<string, mixed>  $runtime
+     * @param  array<int, array<string, mixed>>  $conditions
      * @return array<string, array<string, mixed>>
      */
-    private function byOrigin(Collection $targets, array $runtime): array
+    private function byOrigin(Collection $targets, array $runtime, array $conditions): array
     {
         $rows = [];
 
@@ -232,13 +245,14 @@ class DashboardMetrics
             $group = $targets->filter(fn (MonitorTarget $target): bool => $target->probeOrigin() === $origin);
             $probeOk = (bool) data_get($runtime, $origin.'.api.ok');
             $stale = $group->isNotEmpty() && ! $probeOk;
+            $keys = $group->map(fn (MonitorTarget $target): string => (string) ($conditions[$target->id]['key'] ?? 'pending'));
 
             $rows[$origin] = [
                 'origin' => $origin,
                 'label' => $label,
-                'up' => $group->where('last_ok', true)->count(),
-                'down' => $group->where('last_ok', false)->count(),
-                'unknown' => $group->whereNull('last_ok')->count(),
+                'up' => $keys->filter(fn (string $key): bool => $key === 'ok')->count(),
+                'down' => $keys->filter(fn (string $key): bool => $key === 'down')->count(),
+                'unknown' => $keys->filter(fn (string $key): bool => in_array($key, ['unmonitored', 'pending', 'unknown'], true))->count(),
                 'total' => $group->count(),
                 'probe_ok' => $probeOk,
                 'stale' => $stale,

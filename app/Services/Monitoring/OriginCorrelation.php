@@ -111,6 +111,12 @@ class OriginCorrelation
                 'title' => 'Caído solo afuera',
                 'detail' => 'Interior UP y Exterior DOWN: firewall, DNS, WAF o proxy. La app responde en la red BCV.',
             ],
+            $intKey === 'down' && $extKey === 'ok' => [
+                'key' => 'inside_only',
+                'tone' => 'rose',
+                'title' => 'Caído solo adentro',
+                'detail' => 'Interior DOWN y Exterior UP: el fallo está en la red BCV o en el destino interno, no en Internet público.',
+            ],
             $extKey === 'down' && $intKey === 'down' => [
                 'key' => 'app_down',
                 'tone' => 'rose',
@@ -122,6 +128,30 @@ class OriginCorrelation
                 'tone' => 'rose',
                 'title' => 'App o servicio caído',
                 'detail' => 'Exterior DOWN e Interior degradado: prioriza el portal, no solo la red pública.',
+            ],
+            $intKey === 'down' && $extKey === 'degraded' => [
+                'key' => 'app_down',
+                'tone' => 'rose',
+                'title' => 'App o servicio caído',
+                'detail' => 'Interior DOWN y Exterior degradado: prioriza el portal, no solo un tramo de red.',
+            ],
+            $extKey === 'degraded' && $intKey === 'ok' => [
+                'key' => 'outside_degraded',
+                'tone' => 'amber',
+                'title' => 'Degradado solo afuera',
+                'detail' => 'Interior OK y Exterior con incidencia: red pública, WAF o el camino externo. La LAN ve la página bien.',
+            ],
+            $intKey === 'degraded' && $extKey === 'ok' => [
+                'key' => 'inside_degraded',
+                'tone' => 'amber',
+                'title' => 'Degradado solo adentro',
+                'detail' => 'Exterior OK e Interior con incidencia: revise el camino BCV, el proxy interno o la sonda Interior.',
+            ],
+            $intKey === 'degraded' && $extKey === 'degraded' => [
+                'key' => 'both_degraded',
+                'tone' => 'rose',
+                'title' => 'Página degradada en ambos orígenes',
+                'detail' => 'Interior y Exterior ven la página mal. No es solo Internet: priorice el portal o el upstream.',
             ],
             ($ext['slow'] ?? false) && ($int['slow'] ?? false) => [
                 'key' => 'bottleneck',

@@ -419,7 +419,7 @@ class MonitorDashboardTest extends TestCase
     }
 
     #[Test]
-    public function it_explains_up_500_as_reachable_not_healthy(): void
+    public function it_explains_http_500_as_page_down_with_host_ok(): void
     {
         $user = User::factory()->create();
         $target = MonitorTarget::factory()->create([
@@ -436,7 +436,7 @@ class MonitorDashboardTest extends TestCase
             'availability_reason' => 'http_reachable',
             'payload' => json_encode([
                 'ok' => true,
-                'availability' => ['up' => true, 'reason' => 'http_reachable'],
+                'availability' => ['up' => true, 'reason' => 'http_reachable', 'host_ok' => true, 'page_ok' => false],
                 'http' => ['status' => 500],
             ]),
             'checked_at' => now(),
@@ -445,16 +445,18 @@ class MonitorDashboardTest extends TestCase
         $this->actingAs($user)
             ->get(route('dashboard'))
             ->assertOk()
-            ->assertSee('Degradado')
+            ->assertSee('DOWN')
             ->assertSee('HTTP 500')
-            ->assertSee('no es un corte de red')
-            ->assertSee('Solo códigos HTTP esperados');
+            ->assertSee('Host OK')
+            ->assertSee('Página no')
+            ->assertSee('no es un corte de red');
 
         $this->actingAs($user)
             ->get(route('monitor.sites.show', $target))
             ->assertOk()
-            ->assertSee('UP 500')
-            ->assertSee('fallo de la aplicación');
+            ->assertSee('DOWN 500')
+            ->assertSee('Host OK')
+            ->assertSee('Página no');
     }
 
     #[Test]

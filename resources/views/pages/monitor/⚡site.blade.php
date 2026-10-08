@@ -433,6 +433,7 @@ new #[Title('Detalle del sitio')] class extends Component
             <div class="flex flex-wrap items-center gap-2">
                 <flux:heading size="xl">{{ $this->target->name }}</flux:heading>
                 <x-monitor.condition-badge :condition="$this->condition" />
+                <x-monitor.verdict-chips :host-ok="$this->condition['host_ok'] ?? null" :page-ok="$this->condition['page_ok'] ?? null" />
                 <flux:badge :color="$this->target->isExternalOrigin() ? 'sky' : 'zinc'">
                     {{ MonitorCopy::originLabel($this->target->probeOrigin()) }}
                 </flux:badge>
@@ -449,7 +450,7 @@ new #[Title('Detalle del sitio')] class extends Component
                 @endif
             </div>
             <flux:text class="font-mono">{{ $this->target->url }}</flux:text>
-            @if (($this->condition['key'] ?? '') === 'degraded')
+            @if (in_array($this->condition['key'] ?? '', ['degraded', 'down', 'unknown'], true))
                 <flux:text size="sm">{{ $this->condition['detail'] }}</flux:text>
             @endif
         </div>
@@ -477,7 +478,7 @@ new #[Title('Detalle del sitio')] class extends Component
             <div class="flex flex-wrap gap-2">
                 @foreach ($this->target->frontedSites as $fronted)
                     <a href="{{ route('monitor.sites.show', $fronted) }}" wire:navigate>
-                        <flux:badge :color="$fronted->last_ok === false ? 'rose' : 'zinc'">{{ $fronted->name }}</flux:badge>
+                        <flux:badge :color="($fronted->last_ok === false || ($fronted->last_status_code !== null && $fronted->last_status_code >= 500)) ? 'rose' : 'zinc'">{{ $fronted->name }}</flux:badge>
                     </a>
                 @endforeach
             </div>
@@ -681,20 +682,28 @@ new #[Title('Detalle del sitio')] class extends Component
 
     @php
         $latest = $this->checks->first();
+        $conditionKey = $this->condition['key'] ?? 'pending';
         $probeUnavailable = $latest !== null && (
             (bool) data_get($latest->payload, 'probe_unavailable')
             || $latest->availability_reason === 'probe_unavailable'
         );
-        $displayOk = $probeUnavailable ? $this->target->last_ok : $latest?->ok;
+        $stateLabel = match ($conditionKey) {
+            'down' => 'DOWN'.($latest?->status_code ? ' '.$latest->status_code : ''),
+            'degraded' => 'Degradado'.($latest?->status_code ? ' '.$latest->status_code : ''),
+            'unmonitored' => 'No monitoreado',
+            'unknown' => 'Sin confirmar',
+            'ok' => 'UP'.($latest?->status_code ? ' '.$latest->status_code : ''),
+            default => 'Pendiente',
+        };
     @endphp
     @if ($latest)
         @if ($probeUnavailable)
             <flux:callout icon="exclamation-triangle" variant="warning">
-                No se está monitoreando: el servicio {{ MonitorCopy::originLabel($this->target->probeOrigin()) }} está caído o apagado. No es una falla del portal. El último UP/DOWN se conserva.
+                No se está monitoreando: el servicio {{ MonitorCopy::originLabel($this->target->probeOrigin()) }} está caído o apagado. No es una falla del portal. El último estado no está confirmado.
             </flux:callout>
         @endif
-        @if ($latest->availability_reason === 'http_reachable' && $latest->status_code !== null && $latest->status_code >= 400)
-            <flux:callout icon="exclamation-triangle" variant="warning">
+        @if (in_array($latest->availability_reason, ['http_5xx', 'http_reachable'], true) && $latest->status_code !== null && $latest->status_code >= 400)
+            <flux:callout icon="exclamation-triangle" :variant="$latest->status_code >= 500 ? 'danger' : 'warning'">
                 {{ MonitorCopy::reasonHint($latest->availability_reason, $latest->status_code, $this->target->probeOrigin()) }}
             </flux:callout>
         @endif
@@ -703,19 +712,17 @@ new #[Title('Detalle del sitio')] class extends Component
                 <flux:text size="sm">Estado ahora</flux:text>
                 <span @class([
                     'inline-flex items-center rounded-lg px-3 py-1.5 text-2xl font-bold tracking-wide',
-                    'bg-amber-500 text-white shadow-lg shadow-amber-500/30' => $probeUnavailable,
-                    'bg-emerald-500 text-white shadow-lg shadow-emerald-500/30' => ! $probeUnavailable && $displayOk,
-                    'bg-rose-500 text-white shadow-lg shadow-rose-500/30' => ! $probeUnavailable && ! $displayOk,
+                    'bg-rose-500 text-white shadow-lg shadow-rose-500/30' => $conditionKey === 'down',
+                    'bg-amber-500 text-white shadow-lg shadow-amber-500/30' => in_array($conditionKey, ['degraded', 'unmonitored'], true),
+                    'bg-zinc-500 text-white shadow-lg shadow-zinc-500/30' => in_array($conditionKey, ['unknown', 'pending'], true),
+                    'bg-emerald-500 text-white shadow-lg shadow-emerald-500/30' => $conditionKey === 'ok',
                 ])>
-                    @if ($probeUnavailable)
-                        No monitoreado
-                    @else
-                        {{ $displayOk ? 'UP' : 'DOWN' }}{{ $displayOk && $latest->status_code ? ' '.$latest->status_code : '' }}
-                    @endif
+                    {{ $stateLabel }}
                 </span>
+                <x-monitor.verdict-chips :host-ok="$this->condition['host_ok'] ?? $latest->hostOk()" :page-ok="$this->condition['page_ok'] ?? $latest->pageOk()" />
                 <flux:text size="sm">{{ MonitorCopy::reason($latest->availability_reason) }}</flux:text>
                 @if ($hint = MonitorCopy::reasonHint($latest->availability_reason, $latest->status_code, $this->target->probeOrigin()))
-                    @unless ($latest->availability_reason === 'http_reachable' && $latest->status_code !== null && $latest->status_code >= 400)
+                    @unless (in_array($latest->availability_reason, ['http_5xx', 'http_reachable'], true) && $latest->status_code !== null && $latest->status_code >= 400)
                         <flux:text size="sm">{{ $hint }}</flux:text>
                     @endunless
                 @endif

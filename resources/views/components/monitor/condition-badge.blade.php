@@ -10,6 +10,7 @@
         'degraded' => 'bg-amber-500 text-white',
         'down' => 'bg-rose-500 text-white shadow-sm shadow-rose-500/40',
         'unmonitored' => 'bg-amber-500 text-white',
+        'unknown' => 'bg-zinc-500 text-white',
         default => 'bg-zinc-500 text-white',
     };
 @endphp

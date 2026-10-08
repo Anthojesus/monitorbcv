@@ -64,14 +64,14 @@ class MonitorCopyTest extends TestCase
         $this->assertSame('Interior', MonitorCopy::originLabel('internal'));
         $this->assertSame('Exterior', MonitorCopy::originLabel('external'));
         $this->assertSame('El servidor responde', MonitorCopy::reason('http_reachable'));
+        $this->assertSame('La página respondió 5xx', MonitorCopy::reason('http_5xx'));
 
-        $hint = MonitorCopy::reasonHint('http_reachable', 500);
+        $hint = MonitorCopy::reasonHint('http_5xx', 502);
 
         $this->assertNotNull($hint);
-        $this->assertStringContainsString('HTTP 500', $hint);
+        $this->assertStringContainsString('HTTP 502', $hint);
         $this->assertStringContainsString('no es un corte de red', $hint);
-        $this->assertStringContainsString('aplicación', $hint);
-        $this->assertStringContainsString('Solo códigos HTTP esperados', $hint);
+        $this->assertStringContainsString('página', mb_strtolower($hint));
     }
 
     #[Test]

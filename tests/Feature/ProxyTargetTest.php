@@ -141,6 +141,30 @@ class ProxyTargetTest extends TestCase
     }
 
     #[Test]
+    public function it_explains_app_issue_when_site_is_degraded_and_proxy_is_up(): void
+    {
+        $proxy = MonitorTarget::factory()->proxy()->create([
+            'name' => 'Nginx Front',
+            'last_ok' => true,
+        ]);
+        $site = MonitorTarget::factory()->create([
+            'name' => 'Portal',
+            'proxy_target_id' => $proxy->id,
+            'last_ok' => true,
+            'last_status_code' => 403,
+        ]);
+
+        $diagnosis = app(ProxyCorrelation::class)->diagnose(
+            $site,
+            $proxy,
+            ['key' => 'degraded'],
+            ['key' => 'ok'],
+        );
+
+        $this->assertSame('app_behind_proxy', $diagnosis['key'] ?? null);
+    }
+
+    #[Test]
     public function it_explains_proxy_down_when_both_are_down(): void
     {
         $proxy = MonitorTarget::factory()->proxy()->create(['last_ok' => false]);

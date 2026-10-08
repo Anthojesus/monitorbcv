@@ -24,6 +24,21 @@ class SiteInsightTest extends TestCase
     }
 
     #[Test]
+    public function pending_site_has_no_host_or_page_verdict(): void
+    {
+        $target = (new MonitorTarget)->forceFill([
+            'id' => 3,
+            'kind' => MonitorTarget::KIND_HTTP,
+        ]);
+
+        $condition = app(SiteCondition::class)->evaluate($target, Collection::make());
+
+        $this->assertSame('pending', $condition['key']);
+        $this->assertNull($condition['host_ok']);
+        $this->assertNull($condition['page_ok']);
+    }
+
+    #[Test]
     public function three_slow_ttfb_checks_mark_an_up_site_degraded(): void
     {
         $target = (new MonitorTarget)->forceFill([
@@ -44,10 +59,11 @@ class SiteInsightTest extends TestCase
     }
 
     #[Test]
-    public function reachable_500_is_degraded_not_ok(): void
+    public function reachable_500_is_down_page_incident(): void
     {
         $target = (new MonitorTarget)->forceFill([
             'id' => 2,
+            'kind' => MonitorTarget::KIND_HTTP,
             'last_ok' => true,
             'last_status_code' => 500,
         ]);
@@ -56,8 +72,10 @@ class SiteInsightTest extends TestCase
             $this->check(true, 80, 500),
         ]));
 
-        $this->assertSame('degraded', $condition['key']);
+        $this->assertSame('down', $condition['key']);
         $this->assertSame('critical', $condition['severity']);
+        $this->assertTrue($condition['host_ok']);
+        $this->assertFalse($condition['page_ok']);
     }
 
     #[Test]
@@ -79,8 +97,8 @@ class SiteInsightTest extends TestCase
 
         $condition = app(SiteCondition::class)->evaluate($target, $checks, true);
 
-        $this->assertSame('ok', $condition['key']);
-        $this->assertStringContainsString('ya está arriba', $condition['detail']);
+        $this->assertSame('unknown', $condition['key']);
+        $this->assertStringContainsString('no asuma que está up', mb_strtolower($condition['detail']));
     }
 
     #[Test]
@@ -131,6 +149,35 @@ class SiteInsightTest extends TestCase
             OriginCorrelation::normalizeUrl('https://biblioteca.extra.bcv.org.ve/'),
             $diagnoses[0]['url'],
         );
+    }
+
+    #[Test]
+    public function either_origin_seeing_page_down_is_an_incident(): void
+    {
+        $internal = (new MonitorTarget)->forceFill([
+            'id' => 20,
+            'name' => 'Portal Interior',
+            'url' => 'https://www.bcv.org.ve/',
+            'probe_origin' => MonitorTarget::ORIGIN_INTERNAL,
+        ]);
+        $external = (new MonitorTarget)->forceFill([
+            'id' => 21,
+            'name' => 'Portal Exterior',
+            'url' => 'https://www.bcv.org.ve/',
+            'probe_origin' => MonitorTarget::ORIGIN_EXTERNAL,
+        ]);
+
+        $insideDown = app(OriginCorrelation::class)->diagnoses(Collection::make([$internal, $external]), [
+            20 => ['key' => 'down', 'slow' => false],
+            21 => ['key' => 'ok', 'slow' => false],
+        ]);
+        $bothDegraded = app(OriginCorrelation::class)->diagnoses(Collection::make([$internal, $external]), [
+            20 => ['key' => 'degraded', 'slow' => false],
+            21 => ['key' => 'degraded', 'slow' => false],
+        ]);
+
+        $this->assertSame('inside_only', $insideDown[0]['key'] ?? null);
+        $this->assertSame('both_degraded', $bothDegraded[0]['key'] ?? null);
     }
 
     private function check(bool $ok, int $ttfb, int $status = 200): MonitorCheck

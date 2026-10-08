@@ -574,6 +574,7 @@ new #[Title('Sitios')] class extends Component
                                 @if (($condition['key'] ?? '') === 'ok')
                                     <span class="text-[11px] text-zinc-500">{{ $site->last_status_code }} · {{ $site->last_total_ms }} ms</span>
                                 @endif
+                                <x-monitor.verdict-chips :host-ok="$condition['host_ok'] ?? null" :page-ok="$condition['page_ok'] ?? null" />
                             </div>
                             <div class="mt-1 text-[11px] text-zinc-500">{{ $condition['detail'] ?? MonitorCopy::reason($reason) }}</div>
                             @if ($hint)
@@ -676,13 +677,13 @@ new #[Title('Sitios')] class extends Component
                         <flux:select.option value="HEAD">HEAD</flux:select.option>
                         <flux:select.option value="POST">POST</flux:select.option>
                     </flux:select>
-                    <flux:select wire:model.live="availability_mode" label="Criterio de UP" description="¿La página bien (200) o solo que el servidor contestó?">
+                    <flux:select wire:model.live="availability_mode" label="Criterio de UP" description="Portales: use códigos esperados (200). Reachable es para el host; un 5xx de página igual marca DOWN.">
                         <flux:select.option value="strict">Solo códigos HTTP esperados</flux:select.option>
-                        <flux:select.option value="reachable">El servidor responde (cualquier código HTTP)</flux:select.option>
+                        <flux:select.option value="reachable">El servidor responde (host alcanzable)</flux:select.option>
                     </flux:select>
                     @if ($availability_mode === 'reachable')
                         <flux:callout icon="information-circle">
-                            UP 500 significa que el host contestó, no que la página funcione. Un 5xx es fallo de la aplicación. Use «Solo códigos HTTP esperados» si un error de servidor debe marcar DOWN.
+                            El host cuenta como alcanzable con cualquier HTTP. En un sitio web, un 5xx (502, 503…) marca la página DOWN: el banco y el usuario ven falla. Un 4xx queda Degradado. Use este criterio sobre todo si la app responde 403 a propósito.
                         </flux:callout>
                     @endif
                     @if ($availability_mode === 'strict')

@@ -196,4 +196,36 @@ class MonitorEngineTest extends TestCase
         $this->assertNotNull($check->id);
         $this->assertSame(1, $target->fresh()->checks()->count());
     }
+
+    #[Test]
+    public function fastapi_reachable_502_on_http_site_marks_last_ok_false(): void
+    {
+        $target = MonitorTarget::factory()->create([
+            'kind' => MonitorTarget::KIND_HTTP,
+            'expected_status' => [MonitorTarget::ANY_HTTP_STATUS],
+            'last_ok' => true,
+        ]);
+
+        $this->mock(FastApiProbe::class, function ($mock): void {
+            $mock->shouldReceive('enabled')->andReturn(true);
+            $mock->shouldReceive('healthy')->andReturn(true);
+            $mock->shouldReceive('configFor')->andReturn(['url' => 'http://127.0.0.1:8100']);
+            $mock->shouldReceive('probe')->once()->andReturn([
+                'ok' => true,
+                'availability' => ['up' => true, 'reason' => 'http_reachable'],
+                'http' => ['status' => 502],
+                'timings_ms' => ['total' => 40],
+                'content_check' => [],
+            ]);
+        });
+
+        $check = app(MonitorEngine::class)->run($target);
+
+        $this->assertFalse($check->ok);
+        $this->assertSame('http_5xx', $check->availability_reason);
+        $this->assertTrue((bool) data_get($check->payload, 'availability.host_ok'));
+        $this->assertFalse((bool) data_get($check->payload, 'availability.page_ok'));
+        $this->assertFalse($target->fresh()->last_ok);
+        $this->assertSame(502, $target->fresh()->last_status_code);
+    }
 }

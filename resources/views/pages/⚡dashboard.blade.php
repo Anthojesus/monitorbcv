@@ -137,7 +137,7 @@ new #[Title('Centro de Control')] class extends Component
     $hasCustomTable = filled(auth()->user()?->dashboard_table);
     $health = $http['health'];
     $healthCopy = match ($health) {
-        'critical' => ['Sitios con incidencia', 'Hay destinos DOWN. Prioriza esos chequeos ahora.', 'rose', 'x-circle'],
+        'critical' => ['Sitios con incidencia', 'Hay destinos DOWN o la página respondió 5xx. Prioriza esos chequeos ahora.', 'rose', 'x-circle'],
         'attention' => ['Revisión recomendada', 'Hay degradación, SSL por vencer o un desfase Interior/Exterior.', 'amber', 'exclamation-triangle'],
         'empty' => ['Sin destinos', 'Añade la primera URL para encender el radar.', 'zinc', 'plus-circle'],
         default => ['Todo operativo', 'Los destinos monitoreados responden dentro de umbral.', 'lime', 'check-circle'],
@@ -322,7 +322,7 @@ new #[Title('Centro de Control')] class extends Component
                 <flux:icon.exclamation-triangle class="size-4" />
             </div>
             <div class="mt-3 text-3xl font-semibold tracking-tight text-amber-600 dark:text-amber-300">{{ $http['degraded'] ?? 0 }}</div>
-            <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">UP, pero TTFB, 5xx o SSL fuera de umbral</p>
+            <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">UP, pero TTFB, 4xx o SSL fuera de umbral</p>
         </div>
         <div class="rounded-xl border border-sky-500/20 bg-sky-500/5 p-4 dark:bg-sky-500/10">
             <div class="flex items-center justify-between text-xs font-medium text-sky-700 dark:text-sky-300">
@@ -648,6 +648,7 @@ new #[Title('Centro de Control')] class extends Component
                                     @if (($site['condition']['key'] ?? '') === 'ok' && $site['status'])
                                         <span class="text-[11px] text-zinc-500">{{ $site['status'] }}</span>
                                     @endif
+                                    <x-monitor.verdict-chips :host-ok="$site['host_ok'] ?? null" :page-ok="$site['page_ok'] ?? null" />
                                 </div>
                                 <div class="mt-1 text-[11px] text-zinc-500">{{ $site['condition']['detail'] ?? $site['reason_label'] }}</div>
                                 @if (! empty($site['diagnosis']['title']))
